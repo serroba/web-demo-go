@@ -1,4 +1,4 @@
-package http
+package handlers
 
 // CreateShortURLRequest is the request body for creating a short URL.
 type CreateShortURLRequest struct {
