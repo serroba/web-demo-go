@@ -2,6 +2,7 @@ package container
 
 import (
 	"fmt"
+	"time"
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/danielgtaylor/huma/v2/adapters/humachi"
@@ -12,14 +13,18 @@ import (
 	"github.com/redis/go-redis/v9"
 	"github.com/samber/do"
 	"github.com/serroba/web-demo-go/internal/handlers"
+	"github.com/serroba/web-demo-go/internal/middleware"
+	"github.com/serroba/web-demo-go/internal/ratelimit"
 	"github.com/serroba/web-demo-go/internal/shortener"
 	"github.com/serroba/web-demo-go/internal/store"
 )
 
 type Options struct {
-	Port       int    `default:"8888"           help:"Port to listen on"               short:"p"`
-	CodeLength int    `default:"8"              help:"Length of generated short codes" short:"c"`
-	RedisAddr  string `default:"localhost:6379" help:"Redis server address"            short:"r"`
+	Port            int           `default:"8888"           help:"Port to listen on"    short:"p"`
+	CodeLength      int           `default:"8"              help:"Short code length"    short:"c"`
+	RedisAddr       string        `default:"localhost:6379" help:"Redis server address" short:"r"`
+	RateLimitReqs   int64         `default:"100"            env:"RATE_LIMIT_REQUESTS"   help:"Requests per window"`
+	RateLimitWindow time.Duration `default:"1m"             env:"RATE_LIMIT_WINDOW"     help:"Rate limit window"`
 }
 
 func New(_ humacli.Hooks, options *Options) *do.Injector {
@@ -27,6 +32,11 @@ func New(_ humacli.Hooks, options *Options) *do.Injector {
 
 	router := chi.NewMux()
 	api := humachi.New(router, huma.DefaultConfig("URL Shortener", "1.0.0"))
+
+	// Set up rate limiting
+	rateLimitStore := store.NewRateLimitMemoryStore()
+	limiter := ratelimit.NewSlidingWindowLimiter(rateLimitStore, options.RateLimitReqs, options.RateLimitWindow)
+	api.UseMiddleware(middleware.RateLimiter(api, limiter))
 
 	redisClient := redis.NewClient(&redis.Options{
 		Addr: options.RedisAddr,
