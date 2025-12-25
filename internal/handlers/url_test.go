@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"testing"
 
+	"github.com/jaevor/go-nanoid"
 	"github.com/serroba/web-demo-go/internal/domain"
 	"github.com/serroba/web-demo-go/internal/handlers"
 	"github.com/serroba/web-demo-go/internal/store"
@@ -12,10 +13,21 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func newTestHandler(s domain.ShortURLRepository) *handlers.URLHandler {
+	gen, _ := nanoid.Standard(8)
+
+	strategies := map[handlers.Strategy]handlers.ShortenerStrategy{
+		handlers.StrategyToken: handlers.NewTokenStrategy(s, gen),
+		handlers.StrategyHash:  handlers.NewHashStrategy(s, gen),
+	}
+
+	return handlers.NewURLHandler(s, "http://localhost:8888", strategies)
+}
+
 func TestCreateShortURL(t *testing.T) {
 	t.Run("creates short url successfully", func(t *testing.T) {
 		memStore := store.NewMemoryStore()
-		handler := handlers.NewURLHandler(memStore, "http://localhost:8888", 8)
+		handler := newTestHandler(memStore)
 
 		req := &handlers.CreateShortURLRequest{}
 		req.Body.URL = "https://example.com/very/long/path"
@@ -31,7 +43,7 @@ func TestCreateShortURL(t *testing.T) {
 
 	t.Run("returns error when url is empty", func(t *testing.T) {
 		memStore := store.NewMemoryStore()
-		handler := handlers.NewURLHandler(memStore, "http://localhost:8888", 8)
+		handler := newTestHandler(memStore)
 
 		req := &handlers.CreateShortURLRequest{}
 		req.Body.URL = ""
@@ -44,7 +56,7 @@ func TestCreateShortURL(t *testing.T) {
 
 	t.Run("returns error for invalid strategy", func(t *testing.T) {
 		memStore := store.NewMemoryStore()
-		handler := handlers.NewURLHandler(memStore, "http://localhost:8888", 8)
+		handler := newTestHandler(memStore)
 
 		req := &handlers.CreateShortURLRequest{}
 		req.Body.URL = testURL
@@ -58,7 +70,7 @@ func TestCreateShortURL(t *testing.T) {
 
 	t.Run("token strategy creates new code for same URL", func(t *testing.T) {
 		memStore := store.NewMemoryStore()
-		handler := handlers.NewURLHandler(memStore, "http://localhost:8888", 8)
+		handler := newTestHandler(memStore)
 
 		req := &handlers.CreateShortURLRequest{}
 		req.Body.URL = testURL
@@ -74,7 +86,7 @@ func TestCreateShortURL(t *testing.T) {
 
 	t.Run("hash strategy returns same code for same URL", func(t *testing.T) {
 		memStore := store.NewMemoryStore()
-		handler := handlers.NewURLHandler(memStore, "http://localhost:8888", 8)
+		handler := newTestHandler(memStore)
 
 		req := &handlers.CreateShortURLRequest{}
 		req.Body.URL = testURL
@@ -90,7 +102,7 @@ func TestCreateShortURL(t *testing.T) {
 
 	t.Run("hash strategy returns same code for equivalent URLs", func(t *testing.T) {
 		memStore := store.NewMemoryStore()
-		handler := handlers.NewURLHandler(memStore, "http://localhost:8888", 8)
+		handler := newTestHandler(memStore)
 
 		req1 := &handlers.CreateShortURLRequest{}
 		req1.Body.URL = "https://example.com/path"
@@ -110,7 +122,7 @@ func TestCreateShortURL(t *testing.T) {
 
 	t.Run("hash strategy returns different codes for different URLs", func(t *testing.T) {
 		memStore := store.NewMemoryStore()
-		handler := handlers.NewURLHandler(memStore, "http://localhost:8888", 8)
+		handler := newTestHandler(memStore)
 
 		req1 := &handlers.CreateShortURLRequest{}
 		req1.Body.URL = "https://example.com/path1"
@@ -130,7 +142,7 @@ func TestCreateShortURL(t *testing.T) {
 
 	t.Run("defaults to token strategy when not specified", func(t *testing.T) {
 		memStore := store.NewMemoryStore()
-		handler := handlers.NewURLHandler(memStore, "http://localhost:8888", 8)
+		handler := newTestHandler(memStore)
 
 		req := &handlers.CreateShortURLRequest{}
 		req.Body.URL = testURL
@@ -153,7 +165,7 @@ func TestRedirectToURL(t *testing.T) {
 			Code:        "abc123",
 			OriginalURL: testURL,
 		})
-		handler := handlers.NewURLHandler(memStore, "http://localhost:8888", 8)
+		handler := newTestHandler(memStore)
 
 		req := &handlers.RedirectRequest{Code: "abc123"}
 
@@ -166,7 +178,7 @@ func TestRedirectToURL(t *testing.T) {
 
 	t.Run("returns 404 when code not found", func(t *testing.T) {
 		memStore := store.NewMemoryStore()
-		handler := handlers.NewURLHandler(memStore, "http://localhost:8888", 8)
+		handler := newTestHandler(memStore)
 
 		req := &handlers.RedirectRequest{Code: "notfound"}
 
@@ -178,7 +190,7 @@ func TestRedirectToURL(t *testing.T) {
 
 	t.Run("returns 500 on store error", func(t *testing.T) {
 		mockStore := &mockStore{getByCodeErr: errMock}
-		handler := handlers.NewURLHandler(mockStore, "http://localhost:8888", 8)
+		handler := newTestHandler(mockStore)
 
 		req := &handlers.RedirectRequest{Code: "abc123"}
 
@@ -195,7 +207,7 @@ func TestCreateShortURL_ErrorPaths(t *testing.T) {
 			saveErr:      errMock,
 			getByHashErr: domain.ErrNotFound,
 		}
-		handler := handlers.NewURLHandler(mockStore, "http://localhost:8888", 8)
+		handler := newTestHandler(mockStore)
 
 		req := &handlers.CreateShortURLRequest{}
 		req.Body.URL = testURL
@@ -209,7 +221,7 @@ func TestCreateShortURL_ErrorPaths(t *testing.T) {
 
 	t.Run("hash strategy returns error on unexpected GetByHash error", func(t *testing.T) {
 		mockStore := &mockStore{getByHashErr: errMock}
-		handler := handlers.NewURLHandler(mockStore, "http://localhost:8888", 8)
+		handler := newTestHandler(mockStore)
 
 		req := &handlers.CreateShortURLRequest{}
 		req.Body.URL = testURL
@@ -226,7 +238,7 @@ func TestCreateShortURL_ErrorPaths(t *testing.T) {
 			getByHashErr: domain.ErrNotFound,
 			saveErr:      errMock,
 		}
-		handler := handlers.NewURLHandler(mockStore, "http://localhost:8888", 8)
+		handler := newTestHandler(mockStore)
 
 		req := &handlers.CreateShortURLRequest{}
 		req.Body.URL = testURL
@@ -240,7 +252,7 @@ func TestCreateShortURL_ErrorPaths(t *testing.T) {
 
 	t.Run("hash strategy returns error for invalid URL", func(t *testing.T) {
 		memStore := store.NewMemoryStore()
-		handler := handlers.NewURLHandler(memStore, "http://localhost:8888", 8)
+		handler := newTestHandler(memStore)
 
 		req := &handlers.CreateShortURLRequest{}
 		req.Body.URL = "://invalid"

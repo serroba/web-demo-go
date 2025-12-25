@@ -8,6 +8,7 @@ import (
 	_ "github.com/danielgtaylor/huma/v2/formats/cbor" // CBOR format support for huma
 	"github.com/danielgtaylor/huma/v2/humacli"
 	"github.com/go-chi/chi/v5"
+	"github.com/jaevor/go-nanoid"
 	"github.com/redis/go-redis/v9"
 	"github.com/samber/do"
 	"github.com/serroba/web-demo-go/internal/handlers"
@@ -31,7 +32,15 @@ func New(_ humacli.Hooks, options *Options) *do.Injector {
 	})
 	urlStore := store.NewRedisStore(redisClient)
 	baseURL := fmt.Sprintf("http://localhost:%d", options.Port)
-	urlHandler := handlers.NewURLHandler(urlStore, baseURL, options.CodeLength)
+
+	codeGenerator, _ := nanoid.Standard(options.CodeLength)
+
+	strategies := map[handlers.Strategy]handlers.ShortenerStrategy{
+		handlers.StrategyToken: handlers.NewTokenStrategy(urlStore, codeGenerator),
+		handlers.StrategyHash:  handlers.NewHashStrategy(urlStore, codeGenerator),
+	}
+
+	urlHandler := handlers.NewURLHandler(urlStore, baseURL, strategies)
 
 	do.ProvideValue(injector, router)
 	do.ProvideValue(injector, api)
