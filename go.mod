@@ -4,7 +4,7 @@ go 1.25
 
 require (
 	github.com/danielgtaylor/huma/v2 v2.34.1
-	github.com/go-chi/chi/v5 v5.2.2
+	github.com/go-chi/chi/v5 v5.2.3
 	github.com/samber/do v1.6.0
 )
 
