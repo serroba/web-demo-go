@@ -8,7 +8,7 @@ import (
 	"testing"
 
 	"github.com/redis/go-redis/v9"
-	"github.com/serroba/web-demo-go/internal/handlers"
+	"github.com/serroba/web-demo-go/internal/domain"
 	"github.com/serroba/web-demo-go/internal/store"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -34,39 +34,70 @@ func TestRedisStoreIntegration(t *testing.T) {
 
 	s := store.NewRedisStore(client)
 
-	t.Run("save and get url", func(t *testing.T) {
-		code := "testcode123"
-		url := "https://example.com"
+	t.Run("save and get by code", func(t *testing.T) {
+		shortURL := &domain.ShortURL{
+			Code:        "testcode123",
+			OriginalURL: "https://example.com",
+		}
 
-		err := s.Save(ctx, code, url)
+		err := s.Save(ctx, shortURL)
 		require.NoError(t, err)
 
-		got, err := s.Get(ctx, code)
+		got, err := s.GetByCode(ctx, shortURL.Code)
 		require.NoError(t, err)
-		assert.Equal(t, url, got)
+		assert.Equal(t, shortURL.OriginalURL, got.OriginalURL)
+		assert.Equal(t, shortURL.Code, got.Code)
 
 		// Cleanup
-		client.Del(ctx, "url:"+code)
+		client.Del(ctx, "url:"+string(shortURL.Code))
+	})
+
+	t.Run("save and get by hash", func(t *testing.T) {
+		shortURL := &domain.ShortURL{
+			Code:        "hashcode123",
+			OriginalURL: "https://example.com/hashed",
+			URLHash:     "abc123hash",
+		}
+
+		err := s.Save(ctx, shortURL)
+		require.NoError(t, err)
+
+		got, err := s.GetByHash(ctx, shortURL.URLHash)
+		require.NoError(t, err)
+		assert.Equal(t, shortURL.OriginalURL, got.OriginalURL)
+		assert.Equal(t, shortURL.Code, got.Code)
+		assert.Equal(t, shortURL.URLHash, got.URLHash)
+
+		// Cleanup
+		client.Del(ctx, "url:"+string(shortURL.Code))
+		client.HDel(ctx, "url_hashes", string(shortURL.URLHash))
 	})
 
 	t.Run("overwrite existing url", func(t *testing.T) {
-		code := "overwrite123"
-		_ = s.Save(ctx, code, "https://old.com")
+		code := domain.Code("overwrite123")
+		_ = s.Save(ctx, &domain.ShortURL{Code: code, OriginalURL: "https://old.com"})
 
-		err := s.Save(ctx, code, "https://new.com")
+		err := s.Save(ctx, &domain.ShortURL{Code: code, OriginalURL: "https://new.com"})
 		require.NoError(t, err)
 
-		got, _ := s.Get(ctx, code)
-		assert.Equal(t, "https://new.com", got)
+		got, _ := s.GetByCode(ctx, code)
+		assert.Equal(t, "https://new.com", got.OriginalURL)
 
 		// Cleanup
-		client.Del(ctx, "url:"+code)
+		client.Del(ctx, "url:"+string(code))
 	})
 
 	t.Run("get non-existent returns ErrNotFound", func(t *testing.T) {
-		url, err := s.Get(ctx, "nonexistent")
+		got, err := s.GetByCode(ctx, "nonexistent")
 
-		assert.Empty(t, url)
-		assert.ErrorIs(t, err, handlers.ErrNotFound)
+		assert.Nil(t, got)
+		assert.ErrorIs(t, err, domain.ErrNotFound)
+	})
+
+	t.Run("get by hash non-existent returns ErrNotFound", func(t *testing.T) {
+		got, err := s.GetByHash(ctx, "nonexistenthash")
+
+		assert.Nil(t, got)
+		assert.ErrorIs(t, err, domain.ErrNotFound)
 	})
 }
