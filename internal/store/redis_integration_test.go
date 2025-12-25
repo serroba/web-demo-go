@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/redis/go-redis/v9"
+	"github.com/serroba/web-demo-go/internal/handlers"
 	"github.com/serroba/web-demo-go/internal/store"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -66,6 +67,6 @@ func TestRedisStoreIntegration(t *testing.T) {
 		url, err := s.Get(ctx, "nonexistent")
 
 		assert.Empty(t, url)
-		assert.ErrorIs(t, err, store.ErrNotFound)
+		assert.ErrorIs(t, err, handlers.ErrNotFound)
 	})
 }

@@ -4,6 +4,7 @@ import (
 	"context"
 	"testing"
 
+	"github.com/serroba/web-demo-go/internal/handlers"
 	"github.com/serroba/web-demo-go/internal/store"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -47,6 +48,6 @@ func TestMemoryStore_Get(t *testing.T) {
 		url, err := s.Get(context.Background(), "notfound")
 
 		assert.Empty(t, url)
-		assert.ErrorIs(t, err, store.ErrNotFound)
+		assert.ErrorIs(t, err, handlers.ErrNotFound)
 	})
 }
