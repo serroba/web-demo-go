@@ -102,7 +102,7 @@ func (h *URLHandler) createWithHashStrategy(ctx context.Context, rawURL string) 
 
 	// No existing mapping - generate new code and save both mappings
 	code := h.generateID()
-	if err := h.store.SaveWithHash(ctx, code, rawURL, urlHash); err != nil {
+	if err = h.store.SaveWithHash(ctx, code, rawURL, urlHash); err != nil {
 		return "", err
 	}
 

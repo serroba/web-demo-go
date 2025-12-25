@@ -70,3 +70,12 @@ jobs:
 
       - name: Run Integration Tests
         run: go test -v -tags=integration ./...
+
+      - name: Install go-test-coverage
+        run: go install github.com/vladopajic/go-test-coverage/v2@latest
+
+      - name: Run Tests with Coverage
+        run: go test ./... -coverprofile=coverage.out -covermode=atomic
+
+      - name: Check Coverage Threshold (95%)
+        run: go-test-coverage --config=.testcoverage.yml

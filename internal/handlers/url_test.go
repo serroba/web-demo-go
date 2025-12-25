@@ -11,7 +11,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-//nolint:goconst
 func TestCreateShortURL(t *testing.T) {
 	t.Run("creates short url successfully", func(t *testing.T) {
 		memStore := store.NewMemoryStore()
@@ -47,7 +46,7 @@ func TestCreateShortURL(t *testing.T) {
 		handler := handlers.NewURLHandler(memStore, "http://localhost:8888", 8)
 
 		req := &handlers.CreateShortURLRequest{}
-		req.Body.URL = "https://example.com"
+		req.Body.URL = testURL
 		req.Body.Strategy = "invalid"
 
 		resp, err := handler.CreateShortURL(context.Background(), req)
@@ -61,7 +60,7 @@ func TestCreateShortURL(t *testing.T) {
 		handler := handlers.NewURLHandler(memStore, "http://localhost:8888", 8)
 
 		req := &handlers.CreateShortURLRequest{}
-		req.Body.URL = "https://example.com"
+		req.Body.URL = testURL
 		req.Body.Strategy = handlers.StrategyToken
 
 		resp1, err1 := handler.CreateShortURL(context.Background(), req)
@@ -77,7 +76,7 @@ func TestCreateShortURL(t *testing.T) {
 		handler := handlers.NewURLHandler(memStore, "http://localhost:8888", 8)
 
 		req := &handlers.CreateShortURLRequest{}
-		req.Body.URL = "https://example.com"
+		req.Body.URL = testURL
 		req.Body.Strategy = handlers.StrategyHash
 
 		resp1, err1 := handler.CreateShortURL(context.Background(), req)
@@ -133,7 +132,7 @@ func TestCreateShortURL(t *testing.T) {
 		handler := handlers.NewURLHandler(memStore, "http://localhost:8888", 8)
 
 		req := &handlers.CreateShortURLRequest{}
-		req.Body.URL = "https://example.com"
+		req.Body.URL = testURL
 		// Strategy not set - should default to token
 
 		resp1, err1 := handler.CreateShortURL(context.Background(), req)
@@ -149,7 +148,7 @@ func TestCreateShortURL(t *testing.T) {
 func TestRedirectToURL(t *testing.T) {
 	t.Run("redirects to original url", func(t *testing.T) {
 		memStore := store.NewMemoryStore()
-		_ = memStore.Save(context.Background(), "abc123", "https://example.com")
+		_ = memStore.Save(context.Background(), "abc123", testURL)
 		handler := handlers.NewURLHandler(memStore, "http://localhost:8888", 8)
 
 		req := &handlers.RedirectRequest{Code: "abc123"}
@@ -158,7 +157,7 @@ func TestRedirectToURL(t *testing.T) {
 
 		require.NoError(t, err)
 		assert.Equal(t, http.StatusMovedPermanently, resp.Status)
-		assert.Equal(t, "https://example.com", resp.Headers.Location)
+		assert.Equal(t, testURL, resp.Headers.Location)
 	})
 
 	t.Run("returns 404 when code not found", func(t *testing.T) {
@@ -168,6 +167,82 @@ func TestRedirectToURL(t *testing.T) {
 		req := &handlers.RedirectRequest{Code: "notfound"}
 
 		resp, err := handler.RedirectToURL(context.Background(), req)
+
+		assert.Nil(t, resp)
+		assert.Error(t, err)
+	})
+
+	t.Run("returns 500 on store error", func(t *testing.T) {
+		mockStore := &mockStore{getErr: errMock}
+		handler := handlers.NewURLHandler(mockStore, "http://localhost:8888", 8)
+
+		req := &handlers.RedirectRequest{Code: "abc123"}
+
+		resp, err := handler.RedirectToURL(context.Background(), req)
+
+		assert.Nil(t, resp)
+		assert.Error(t, err)
+	})
+}
+
+func TestCreateShortURL_ErrorPaths(t *testing.T) {
+	t.Run("token strategy returns error when save fails", func(t *testing.T) {
+		mockStore := &mockStore{
+			saveErr:          errMock,
+			getCodeByHashErr: handlers.ErrNotFound,
+		}
+		handler := handlers.NewURLHandler(mockStore, "http://localhost:8888", 8)
+
+		req := &handlers.CreateShortURLRequest{}
+		req.Body.URL = testURL
+		req.Body.Strategy = handlers.StrategyToken
+
+		resp, err := handler.CreateShortURL(context.Background(), req)
+
+		assert.Nil(t, resp)
+		assert.Error(t, err)
+	})
+
+	t.Run("hash strategy returns error on unexpected GetCodeByHash error", func(t *testing.T) {
+		mockStore := &mockStore{getCodeByHashErr: errMock}
+		handler := handlers.NewURLHandler(mockStore, "http://localhost:8888", 8)
+
+		req := &handlers.CreateShortURLRequest{}
+		req.Body.URL = testURL
+		req.Body.Strategy = handlers.StrategyHash
+
+		resp, err := handler.CreateShortURL(context.Background(), req)
+
+		assert.Nil(t, resp)
+		assert.Error(t, err)
+	})
+
+	t.Run("hash strategy returns error when SaveWithHash fails", func(t *testing.T) {
+		mockStore := &mockStore{
+			getCodeByHashErr: handlers.ErrNotFound,
+			saveWithHashErr:  errMock,
+		}
+		handler := handlers.NewURLHandler(mockStore, "http://localhost:8888", 8)
+
+		req := &handlers.CreateShortURLRequest{}
+		req.Body.URL = testURL
+		req.Body.Strategy = handlers.StrategyHash
+
+		resp, err := handler.CreateShortURL(context.Background(), req)
+
+		assert.Nil(t, resp)
+		assert.Error(t, err)
+	})
+
+	t.Run("hash strategy returns error for invalid URL", func(t *testing.T) {
+		memStore := store.NewMemoryStore()
+		handler := handlers.NewURLHandler(memStore, "http://localhost:8888", 8)
+
+		req := &handlers.CreateShortURLRequest{}
+		req.Body.URL = "://invalid"
+		req.Body.Strategy = handlers.StrategyHash
+
+		resp, err := handler.CreateShortURL(context.Background(), req)
 
 		assert.Nil(t, resp)
 		assert.Error(t, err)
