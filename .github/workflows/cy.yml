@@ -79,3 +79,8 @@ jobs:
 
       - name: Check Coverage Threshold (95%)
         run: go-test-coverage --config=.testcoverage.yml
+
+      - name: Upload coverage reports to Codecov
+        uses: codecov/codecov-action@v5
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
