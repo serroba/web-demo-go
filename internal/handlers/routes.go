@@ -4,7 +4,8 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 )
 
-func RegisterRoutes(api huma.API, h *URLHandler) {
-	huma.Post(api, "/shorten", h.CreateShortURL)
-	huma.Get(api, "/{code}", h.RedirectToURL)
+func RegisterRoutes(api huma.API, urlHandler *URLHandler, healthHandler *HealthHandler) {
+	huma.Get(api, "/health", healthHandler.Check)
+	huma.Post(api, "/shorten", urlHandler.CreateShortURL)
+	huma.Get(api, "/{code}", urlHandler.RedirectToURL)
 }

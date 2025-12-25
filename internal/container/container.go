@@ -54,13 +54,14 @@ func New(_ humacli.Hooks, options *Options) *do.Injector {
 	}
 
 	urlHandler := handlers.NewURLHandler(urlStore, baseURL, strategies)
+	healthHandler := handlers.NewHealthHandler(handlers.NewRedisHealthChecker(redisClient))
 
 	do.ProvideValue(injector, router)
 	do.ProvideValue(injector, api)
 	do.ProvideValue(injector, options)
 	do.ProvideValue(injector, redisClient)
 
-	handlers.RegisterRoutes(api, urlHandler)
+	handlers.RegisterRoutes(api, urlHandler, healthHandler)
 
 	return injector
 }
