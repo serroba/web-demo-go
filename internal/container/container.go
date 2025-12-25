@@ -13,6 +13,7 @@ import (
 	"github.com/redis/go-redis/v9"
 	"github.com/samber/do"
 	"github.com/serroba/web-demo-go/internal/handlers"
+	"github.com/serroba/web-demo-go/internal/health"
 	"github.com/serroba/web-demo-go/internal/middleware"
 	"github.com/serroba/web-demo-go/internal/ratelimit"
 	"github.com/serroba/web-demo-go/internal/shortener"
@@ -54,14 +55,15 @@ func New(_ humacli.Hooks, options *Options) *do.Injector {
 	}
 
 	urlHandler := handlers.NewURLHandler(urlStore, baseURL, strategies)
-	healthHandler := handlers.NewHealthHandler(handlers.NewRedisHealthChecker(redisClient))
+	healthHandler := health.NewHandler(health.NewRedisChecker(redisClient))
 
 	do.ProvideValue(injector, router)
 	do.ProvideValue(injector, api)
 	do.ProvideValue(injector, options)
 	do.ProvideValue(injector, redisClient)
 
-	handlers.RegisterRoutes(api, urlHandler, healthHandler)
+	handlers.RegisterRoutes(api, urlHandler)
+	health.RegisterRoutes(api, healthHandler)
 
 	return injector
 }

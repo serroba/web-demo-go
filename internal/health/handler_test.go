@@ -1,4 +1,4 @@
-package handlers_test
+package health_test
 
 import (
 	"context"
@@ -8,30 +8,30 @@ import (
 	"time"
 
 	"github.com/redis/go-redis/v9"
-	"github.com/serroba/web-demo-go/internal/handlers"
+	"github.com/serroba/web-demo-go/internal/health"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
-type mockHealthChecker struct {
+type mockChecker struct {
 	err error
 }
 
-func (m *mockHealthChecker) Ping(_ context.Context) error {
+func (m *mockChecker) Ping(_ context.Context) error {
 	return m.err
 }
 
-func TestNewHealthHandler(t *testing.T) {
-	checker := &mockHealthChecker{}
-	handler := handlers.NewHealthHandler(checker)
+func TestNewHandler(t *testing.T) {
+	checker := &mockChecker{}
+	handler := health.NewHandler(checker)
 
 	assert.NotNil(t, handler)
 }
 
-func TestHealthHandler_Check(t *testing.T) {
+func TestHandler_Check(t *testing.T) {
 	t.Run("returns ok when redis is healthy", func(t *testing.T) {
-		checker := &mockHealthChecker{err: nil}
-		handler := handlers.NewHealthHandler(checker)
+		checker := &mockChecker{err: nil}
+		handler := health.NewHandler(checker)
 
 		resp, err := handler.Check(context.Background(), nil)
 
@@ -41,8 +41,8 @@ func TestHealthHandler_Check(t *testing.T) {
 	})
 
 	t.Run("returns degraded when redis is unhealthy", func(t *testing.T) {
-		checker := &mockHealthChecker{err: errors.New("connection refused")}
-		handler := handlers.NewHealthHandler(checker)
+		checker := &mockChecker{err: errors.New("connection refused")}
+		handler := health.NewHandler(checker)
 
 		resp, err := handler.Check(context.Background(), nil)
 
@@ -52,7 +52,7 @@ func TestHealthHandler_Check(t *testing.T) {
 	})
 }
 
-func TestRedisHealthChecker(t *testing.T) {
+func TestRedisChecker(t *testing.T) {
 	addr := os.Getenv("REDIS_ADDR")
 	if addr == "" {
 		addr = "localhost:6379"
@@ -69,14 +69,14 @@ func TestRedisHealthChecker(t *testing.T) {
 		t.Skipf("Redis not available at %s: %v", addr, err)
 	}
 
-	t.Run("NewRedisHealthChecker creates checker", func(t *testing.T) {
-		checker := handlers.NewRedisHealthChecker(client)
+	t.Run("NewRedisChecker creates checker", func(t *testing.T) {
+		checker := health.NewRedisChecker(client)
 
 		assert.NotNil(t, checker)
 	})
 
 	t.Run("Ping returns nil when redis is available", func(t *testing.T) {
-		checker := handlers.NewRedisHealthChecker(client)
+		checker := health.NewRedisChecker(client)
 
 		err := checker.Ping(context.Background())
 
