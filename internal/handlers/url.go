@@ -43,7 +43,7 @@ func (h *URLHandler) CreateShortURL(ctx context.Context, req *CreateShortURLRequ
 		return nil, huma.Error400BadRequest("invalid strategy: must be 'token' or 'hash'")
 	}
 
-	shortURL, err := strategy.Shorten(ctx, req.Body.URL.String())
+	shortURL, err := strategy.Shorten(ctx, req.Body.URL)
 	if err != nil {
 		return nil, huma.Error500InternalServerError("failed to save url")
 	}

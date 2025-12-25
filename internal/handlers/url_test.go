@@ -3,7 +3,6 @@ package handlers_test
 import (
 	"context"
 	"net/http"
-	"net/url"
 	"testing"
 
 	"github.com/jaevor/go-nanoid"
@@ -25,22 +24,13 @@ func newTestHandler(s shortener.Repository) *handlers.URLHandler {
 	return handlers.NewURLHandler(s, "http://localhost:8888", strategies)
 }
 
-func mustParseURL(t *testing.T, rawURL string) url.URL {
-	t.Helper()
-
-	parsed, err := url.Parse(rawURL)
-	require.NoError(t, err)
-
-	return *parsed
-}
-
 func TestCreateShortURL(t *testing.T) {
 	t.Run("creates short url successfully", func(t *testing.T) {
 		memStore := store.NewMemoryStore()
 		handler := newTestHandler(memStore)
 
 		req := &handlers.CreateShortURLRequest{}
-		req.Body.URL = mustParseURL(t, "https://example.com/very/long/path")
+		req.Body.URL = "https://example.com/very/long/path"
 
 		resp, err := handler.CreateShortURL(context.Background(), req)
 
@@ -56,7 +46,7 @@ func TestCreateShortURL(t *testing.T) {
 		handler := newTestHandler(memStore)
 
 		req := &handlers.CreateShortURLRequest{}
-		req.Body.URL = mustParseURL(t, testURL)
+		req.Body.URL = testURL
 		req.Body.Strategy = "invalid"
 
 		resp, err := handler.CreateShortURL(context.Background(), req)
@@ -70,7 +60,7 @@ func TestCreateShortURL(t *testing.T) {
 		handler := newTestHandler(memStore)
 
 		req := &handlers.CreateShortURLRequest{}
-		req.Body.URL = mustParseURL(t, testURL)
+		req.Body.URL = testURL
 		req.Body.Strategy = handlers.StrategyToken
 
 		resp1, err1 := handler.CreateShortURL(context.Background(), req)
@@ -86,7 +76,7 @@ func TestCreateShortURL(t *testing.T) {
 		handler := newTestHandler(memStore)
 
 		req := &handlers.CreateShortURLRequest{}
-		req.Body.URL = mustParseURL(t, testURL)
+		req.Body.URL = testURL
 		req.Body.Strategy = handlers.StrategyHash
 
 		resp1, err1 := handler.CreateShortURL(context.Background(), req)
@@ -102,11 +92,11 @@ func TestCreateShortURL(t *testing.T) {
 		handler := newTestHandler(memStore)
 
 		req1 := &handlers.CreateShortURLRequest{}
-		req1.Body.URL = mustParseURL(t, "https://example.com/path")
+		req1.Body.URL = "https://example.com/path"
 		req1.Body.Strategy = handlers.StrategyHash
 
 		req2 := &handlers.CreateShortURLRequest{}
-		req2.Body.URL = mustParseURL(t, "https://example.com/path/")
+		req2.Body.URL = "https://example.com/path/"
 		req2.Body.Strategy = handlers.StrategyHash
 
 		resp1, err1 := handler.CreateShortURL(context.Background(), req1)
@@ -122,11 +112,11 @@ func TestCreateShortURL(t *testing.T) {
 		handler := newTestHandler(memStore)
 
 		req1 := &handlers.CreateShortURLRequest{}
-		req1.Body.URL = mustParseURL(t, "https://example.com/path1")
+		req1.Body.URL = "https://example.com/path1"
 		req1.Body.Strategy = handlers.StrategyHash
 
 		req2 := &handlers.CreateShortURLRequest{}
-		req2.Body.URL = mustParseURL(t, "https://example.com/path2")
+		req2.Body.URL = "https://example.com/path2"
 		req2.Body.Strategy = handlers.StrategyHash
 
 		resp1, err1 := handler.CreateShortURL(context.Background(), req1)
@@ -142,7 +132,7 @@ func TestCreateShortURL(t *testing.T) {
 		handler := newTestHandler(memStore)
 
 		req := &handlers.CreateShortURLRequest{}
-		req.Body.URL = mustParseURL(t, testURL)
+		req.Body.URL = testURL
 		// Strategy not set - should default to token
 
 		resp1, err1 := handler.CreateShortURL(context.Background(), req)
@@ -207,7 +197,7 @@ func TestCreateShortURL_ErrorPaths(t *testing.T) {
 		handler := newTestHandler(mockStore)
 
 		req := &handlers.CreateShortURLRequest{}
-		req.Body.URL = mustParseURL(t, testURL)
+		req.Body.URL = testURL
 		req.Body.Strategy = handlers.StrategyToken
 
 		resp, err := handler.CreateShortURL(context.Background(), req)
@@ -221,7 +211,7 @@ func TestCreateShortURL_ErrorPaths(t *testing.T) {
 		handler := newTestHandler(mockStore)
 
 		req := &handlers.CreateShortURLRequest{}
-		req.Body.URL = mustParseURL(t, testURL)
+		req.Body.URL = testURL
 		req.Body.Strategy = handlers.StrategyHash
 
 		resp, err := handler.CreateShortURL(context.Background(), req)
@@ -238,7 +228,7 @@ func TestCreateShortURL_ErrorPaths(t *testing.T) {
 		handler := newTestHandler(mockStore)
 
 		req := &handlers.CreateShortURLRequest{}
-		req.Body.URL = mustParseURL(t, testURL)
+		req.Body.URL = testURL
 		req.Body.Strategy = handlers.StrategyHash
 
 		resp, err := handler.CreateShortURL(context.Background(), req)

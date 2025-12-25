@@ -1,7 +1,5 @@
 package handlers
 
-import "net/url"
-
 // Strategy defines the URL shortening strategy.
 type Strategy string
 
@@ -15,7 +13,7 @@ const (
 // CreateShortURLRequest is the request body for creating a short URL.
 type CreateShortURLRequest struct {
 	Body struct {
-		URL      url.URL  `doc:"The URL to shorten" json:"url"`
+		URL      string   `doc:"The URL to shorten" format:"uri"   json:"url"`
 		Strategy Strategy `default:"token"          doc:"Strategy" enum:"token,hash" json:"strategy"`
 	}
 }
