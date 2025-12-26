@@ -1,5 +1,7 @@
 package shortener
 
+import "time"
+
 // Code represents a short URL code.
 type Code string
 
@@ -11,4 +13,5 @@ type ShortURL struct {
 	Code        Code
 	OriginalURL string
 	URLHash     URLHash // empty for token strategy, populated for hash strategy
+	CreatedAt   time.Time
 }

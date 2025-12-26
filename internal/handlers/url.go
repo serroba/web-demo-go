@@ -7,7 +7,9 @@ import (
 	"net/http"
 
 	"github.com/danielgtaylor/huma/v2"
+	"github.com/serroba/web-demo-go/internal/analytics"
 	"github.com/serroba/web-demo-go/internal/shortener"
+	"go.uber.org/zap"
 )
 
 // URLHandler handles URL shortening operations.
@@ -16,6 +18,8 @@ type URLHandler struct {
 	store           shortener.Repository
 	baseURL         string
 	defaultStrategy Strategy
+	publisher       *analytics.Publisher
+	logger          *zap.Logger
 }
 
 // NewURLHandler creates a new URL handler with injected strategies.
@@ -23,13 +27,48 @@ func NewURLHandler(
 	store shortener.Repository,
 	baseURL string,
 	strategies map[Strategy]shortener.Strategy,
+	publisher *analytics.Publisher,
+	logger *zap.Logger,
 ) *URLHandler {
 	return &URLHandler{
 		strategies:      strategies,
 		store:           store,
 		baseURL:         baseURL,
 		defaultStrategy: StrategyToken,
+		publisher:       publisher,
+		logger:          logger,
 	}
+}
+
+type contextKey string
+
+const (
+	clientIPKey  contextKey = "clientIP"
+	userAgentKey contextKey = "userAgent"
+)
+
+// ContextWithRequestMeta adds client IP and user-agent to context.
+func ContextWithRequestMeta(ctx context.Context, clientIP, userAgent string) context.Context {
+	ctx = context.WithValue(ctx, clientIPKey, clientIP)
+	ctx = context.WithValue(ctx, userAgentKey, userAgent)
+
+	return ctx
+}
+
+func clientIPFromContext(ctx context.Context) string {
+	if v, ok := ctx.Value(clientIPKey).(string); ok {
+		return v
+	}
+
+	return ""
+}
+
+func userAgentFromContext(ctx context.Context) string {
+	if v, ok := ctx.Value(userAgentKey).(string); ok {
+		return v
+	}
+
+	return ""
 }
 
 func (h *URLHandler) CreateShortURL(ctx context.Context, req *CreateShortURLRequest) (*CreateShortURLResponse, error) {
@@ -46,6 +85,24 @@ func (h *URLHandler) CreateShortURL(ctx context.Context, req *CreateShortURLRequ
 	shortURL, err := strategy.Shorten(ctx, req.Body.URL)
 	if err != nil {
 		return nil, huma.Error500InternalServerError("failed to save url")
+	}
+
+	// Publish analytics event
+	event := &analytics.URLCreatedEvent{
+		Code:        string(shortURL.Code),
+		OriginalURL: shortURL.OriginalURL,
+		URLHash:     string(shortURL.URLHash),
+		Strategy:    string(strategyName),
+		CreatedAt:   shortURL.CreatedAt,
+		ClientIP:    clientIPFromContext(ctx),
+		UserAgent:   userAgentFromContext(ctx),
+	}
+
+	if err := h.publisher.PublishURLCreated(event); err != nil {
+		h.logger.Error("failed to publish analytics event",
+			zap.String("code", event.Code),
+			zap.Error(err),
+		)
 	}
 
 	fullShortURL := fmt.Sprintf("%s/%s", h.baseURL, shortURL.Code)

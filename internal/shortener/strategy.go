@@ -3,6 +3,7 @@ package shortener
 import (
 	"context"
 	"errors"
+	"time"
 )
 
 // Strategy defines the interface for URL shortening strategies.
@@ -32,6 +33,7 @@ func (s *TokenStrategy) Shorten(ctx context.Context, url string) (*ShortURL, err
 		Code:        Code(s.generateCode()),
 		OriginalURL: url,
 		URLHash:     "",
+		CreatedAt:   time.Now(),
 	}
 
 	if err := s.store.Save(ctx, shortURL); err != nil {
@@ -76,6 +78,7 @@ func (s *HashStrategy) Shorten(ctx context.Context, rawURL string) (*ShortURL, e
 		Code:        Code(s.generateCode()),
 		OriginalURL: rawURL,
 		URLHash:     urlHash,
+		CreatedAt:   time.Now(),
 	}
 
 	if err = s.store.Save(ctx, shortURL); err != nil {

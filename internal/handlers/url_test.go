@@ -5,13 +5,21 @@ import (
 	"net/http"
 	"testing"
 
+	"github.com/ThreeDotsLabs/watermill/message"
 	"github.com/jaevor/go-nanoid"
+	"github.com/serroba/web-demo-go/internal/analytics"
 	"github.com/serroba/web-demo-go/internal/handlers"
 	"github.com/serroba/web-demo-go/internal/shortener"
 	"github.com/serroba/web-demo-go/internal/store"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.uber.org/zap"
 )
+
+type mockPublisher struct{}
+
+func (m *mockPublisher) Publish(_ string, _ ...*message.Message) error { return nil }
+func (m *mockPublisher) Close() error                                  { return nil }
 
 func newTestHandler(s shortener.Repository) *handlers.URLHandler {
 	gen, _ := nanoid.Standard(8)
@@ -21,7 +29,10 @@ func newTestHandler(s shortener.Repository) *handlers.URLHandler {
 		handlers.StrategyHash:  shortener.NewHashStrategy(s, gen),
 	}
 
-	return handlers.NewURLHandler(s, "http://localhost:8888", strategies)
+	publisher := analytics.NewPublisher(&mockPublisher{})
+	logger := zap.NewNop()
+
+	return handlers.NewURLHandler(s, "http://localhost:8888", strategies, publisher, logger)
 }
 
 func TestCreateShortURL(t *testing.T) {

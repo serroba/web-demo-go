@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/ThreeDotsLabs/watermill"
+	"github.com/ThreeDotsLabs/watermill-redisstream/pkg/redisstream"
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/danielgtaylor/huma/v2/adapters/humachi"
 	_ "github.com/danielgtaylor/huma/v2/formats/cbor" // CBOR format support for huma
@@ -11,6 +13,7 @@ import (
 	"github.com/jaevor/go-nanoid"
 	"github.com/redis/go-redis/v9"
 	"github.com/samber/do"
+	"github.com/serroba/web-demo-go/internal/analytics"
 	"github.com/serroba/web-demo-go/internal/cache"
 	"github.com/serroba/web-demo-go/internal/handlers"
 	"github.com/serroba/web-demo-go/internal/health"
@@ -88,6 +91,25 @@ func RateLimitPackage(i *do.Injector) {
 	})
 }
 
+// AnalyticsPackage provides the analytics publisher.
+func AnalyticsPackage(i *do.Injector) {
+	do.Provide(i, func(i *do.Injector) (*analytics.Publisher, error) {
+		redisClient := do.MustInvoke[*redis.Client](i)
+
+		publisher, err := redisstream.NewPublisher(
+			redisstream.PublisherConfig{
+				Client: redisClient,
+			},
+			watermill.NopLogger{},
+		)
+		if err != nil {
+			return nil, err
+		}
+
+		return analytics.NewPublisher(publisher), nil
+	})
+}
+
 // HTTPPackage provides the router, API, and registers routes.
 func HTTPPackage(i *do.Injector) {
 	do.Provide(i, func(_ *do.Injector) (*chi.Mux, error) {
@@ -97,13 +119,17 @@ func HTTPPackage(i *do.Injector) {
 	do.Provide(i, func(i *do.Injector) (huma.API, error) {
 		router := do.MustInvoke[*chi.Mux](i)
 		opts := do.MustInvoke[*Options](i)
+		logger := do.MustInvoke[*zap.Logger](i)
 		redisClient := do.MustInvoke[*redis.Client](i)
 		urlStore := do.MustInvoke[shortener.Repository](i)
 		rateLimitStore := do.MustInvoke[ratelimit.Store](i)
+		analyticsPublisher := do.MustInvoke[*analytics.Publisher](i)
 
 		api := humachi.New(router, huma.DefaultConfig("URL Shortener", "1.0.0"))
 
-		// Set up rate limiting
+		// Set up middleware
+		api.UseMiddleware(middleware.RequestMeta(api))
+
 		limiter := ratelimit.NewSlidingWindowLimiter(rateLimitStore, opts.RateLimitReqs, opts.RateLimitWindow)
 		api.UseMiddleware(middleware.RateLimiter(api, limiter))
 
@@ -116,7 +142,7 @@ func HTTPPackage(i *do.Injector) {
 			handlers.StrategyHash:  shortener.NewHashStrategy(urlStore, codeGenerator),
 		}
 
-		urlHandler := handlers.NewURLHandler(urlStore, baseURL, strategies)
+		urlHandler := handlers.NewURLHandler(urlStore, baseURL, strategies, analyticsPublisher, logger)
 		healthHandler := health.NewHandler(health.NewRedisChecker(redisClient))
 
 		// Register routes

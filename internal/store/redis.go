@@ -3,6 +3,8 @@ package store
 import (
 	"context"
 	"errors"
+	"strconv"
+	"time"
 
 	"github.com/redis/go-redis/v9"
 	"github.com/serroba/web-demo-go/internal/shortener"
@@ -32,6 +34,7 @@ func (r *RedisStore) Save(ctx context.Context, shortURL *shortener.ShortURL) err
 		"code":         string(shortURL.Code),
 		"original_url": shortURL.OriginalURL,
 		"url_hash":     string(shortURL.URLHash),
+		"created_at":   shortURL.CreatedAt.UnixNano(),
 	})
 
 	// Index by hash if present (for hash strategy)
@@ -54,10 +57,19 @@ func (r *RedisStore) GetByCode(ctx context.Context, code shortener.Code) (*short
 		return nil, shortener.ErrNotFound
 	}
 
+	var createdAt time.Time
+
+	if ts, ok := result["created_at"]; ok {
+		if nanos, err := strconv.ParseInt(ts, 10, 64); err == nil {
+			createdAt = time.Unix(0, nanos)
+		}
+	}
+
 	return &shortener.ShortURL{
 		Code:        shortener.Code(result["code"]),
 		OriginalURL: result["original_url"],
 		URLHash:     shortener.URLHash(result["url_hash"]),
+		CreatedAt:   createdAt,
 	}, nil
 }
 

@@ -23,6 +23,7 @@ func main() {
 		container.RedisPackage(injector)
 		container.RepositoryPackage(injector)
 		container.RateLimitPackage(injector)
+		container.AnalyticsPackage(injector)
 		container.HTTPPackage(injector)
 
 		logger := do.MustInvoke[*zap.Logger](injector)
