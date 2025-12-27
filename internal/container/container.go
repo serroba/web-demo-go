@@ -58,14 +58,30 @@ func LoggerPackage(i *do.Injector) {
 	})
 }
 
+// RedisClient wraps redis.Client to implement Shutdownable for do.Injector.
+type RedisClient struct {
+	*redis.Client
+}
+
+// Shutdown implements do.Shutdownable.
+func (r *RedisClient) Shutdown() error {
+	if r.Client != nil {
+		return r.Close()
+	}
+
+	return nil
+}
+
 // RedisPackage provides the Redis client.
 func RedisPackage(i *do.Injector) {
-	do.Provide(i, func(i *do.Injector) (*redis.Client, error) {
+	do.Provide(i, func(i *do.Injector) (*RedisClient, error) {
 		opts := do.MustInvoke[*Options](i)
 
-		return redis.NewClient(&redis.Options{
-			Addr: opts.RedisAddr,
-		}), nil
+		return &RedisClient{
+			Client: redis.NewClient(&redis.Options{
+				Addr: opts.RedisAddr,
+			}),
+		}, nil
 	})
 }
 
@@ -96,6 +112,12 @@ func PostgresPackage(i *do.Injector) {
 			return nil, err
 		}
 
+		if err := pool.Ping(ctx); err != nil {
+			pool.Close()
+
+			return nil, err
+		}
+
 		return &PostgresPool{Pool: pool}, nil
 	})
 }
@@ -105,13 +127,13 @@ func RepositoryPackage(i *do.Injector) {
 	do.Provide(i, func(i *do.Injector) (shortener.Repository, error) {
 		opts := do.MustInvoke[*Options](i)
 		pool := do.MustInvoke[*PostgresPool](i)
-		redisClient := do.MustInvoke[*redis.Client](i)
+		redisClient := do.MustInvoke[*RedisClient](i)
 
 		// PostgreSQL as source of truth
 		postgresStore := store.NewPostgresStore(pool.Pool)
 
 		// Redis cache layer with configurable TTL
-		var repo shortener.Repository = store.NewRedisCacheRepository(postgresStore, redisClient, opts.CacheTTL)
+		var repo shortener.Repository = store.NewRedisCacheRepository(postgresStore, redisClient.Client, opts.CacheTTL)
 
 		// Optional in-memory LRU cache on top
 		if opts.CacheSize > 0 {
@@ -126,11 +148,11 @@ func RepositoryPackage(i *do.Injector) {
 func RateLimitPackage(i *do.Injector) {
 	do.Provide(i, func(i *do.Injector) (ratelimit.Store, error) {
 		opts := do.MustInvoke[*Options](i)
-		redisClient := do.MustInvoke[*redis.Client](i)
+		redisClient := do.MustInvoke[*RedisClient](i)
 
 		switch opts.RateLimitStore {
 		case "redis":
-			return ratelimitstore.NewRedis(redisClient), nil
+			return ratelimitstore.NewRedis(redisClient.Client), nil
 		default:
 			return ratelimitstore.NewMemory(), nil
 		}
@@ -140,11 +162,11 @@ func RateLimitPackage(i *do.Injector) {
 // PublisherGroupPackage provides the publisher group for event publishing.
 func PublisherGroupPackage(i *do.Injector) {
 	do.Provide(i, func(i *do.Injector) (*messaging.PublisherGroup, error) {
-		redisClient := do.MustInvoke[*redis.Client](i)
+		redisClient := do.MustInvoke[*RedisClient](i)
 
 		publisher, err := redisstream.NewPublisher(
 			redisstream.PublisherConfig{
-				Client: redisClient,
+				Client: redisClient.Client,
 			},
 			watermill.NopLogger{},
 		)
@@ -169,13 +191,13 @@ func AnalyticsStorePackage(i *do.Injector) {
 func ConsumerGroupPackage(i *do.Injector) {
 	do.Provide(i, func(i *do.Injector) (*messaging.ConsumerGroup, error) {
 		opts := do.MustInvoke[*Options](i)
-		redisClient := do.MustInvoke[*redis.Client](i)
+		redisClient := do.MustInvoke[*RedisClient](i)
 		logger := do.MustInvoke[*zap.Logger](i)
 		store := do.MustInvoke[analytics.Store](i)
 
 		subscriber, err := redisstream.NewSubscriber(
 			redisstream.SubscriberConfig{
-				Client:        redisClient,
+				Client:        redisClient.Client,
 				ConsumerGroup: opts.ConsumerGroup,
 			},
 			watermill.NopLogger{},
@@ -215,7 +237,7 @@ func HTTPPackage(i *do.Injector) {
 		router := do.MustInvoke[*chi.Mux](i)
 		opts := do.MustInvoke[*Options](i)
 		logger := do.MustInvoke[*zap.Logger](i)
-		redisClient := do.MustInvoke[*redis.Client](i)
+		redisClient := do.MustInvoke[*RedisClient](i)
 		urlStore := do.MustInvoke[shortener.Repository](i)
 		rateLimitStore := do.MustInvoke[ratelimit.Store](i)
 		publisherGroup := do.MustInvoke[*messaging.PublisherGroup](i)
@@ -246,7 +268,7 @@ func HTTPPackage(i *do.Injector) {
 			messaging.NewPublishFunc[analytics.URLAccessedEvent](pub, opts.TopicURLAccessed),
 			logger,
 		)
-		healthHandler := health.NewHandler(health.NewRedisChecker(redisClient))
+		healthHandler := health.NewHandler(health.NewRedisChecker(redisClient.Client))
 
 		// Register routes
 		handlers.RegisterRoutes(api, urlHandler)
