@@ -12,6 +12,40 @@ on:
   workflow_dispatch:
 
 jobs:
+  migrations:
+    runs-on: ubuntu-latest
+    services:
+      timescaledb:
+        image: timescale/timescaledb:latest-pg17
+        ports:
+          - 5432:5432
+        env:
+          POSTGRES_USER: shortener
+          POSTGRES_PASSWORD: shortener
+          POSTGRES_DB: shortener
+        options: >-
+          --health-cmd "pg_isready -U shortener -d shortener"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Install Atlas CLI
+        uses: ariga/setup-atlas@v0
+
+      - name: Enable TimescaleDB extension
+        run: |
+          psql "postgresql://shortener:shortener@localhost:5432/shortener" \
+            -c "CREATE EXTENSION IF NOT EXISTS timescaledb CASCADE;"
+
+      - name: Run database migrations
+        env:
+          DATABASE_URL: postgres://shortener:shortener@localhost:5432/shortener?sslmode=disable
+        run: |
+          atlas migrate apply --dir file://migrations --url "$DATABASE_URL"
+
   check:
     runs-on: ubuntu-latest
     services:
