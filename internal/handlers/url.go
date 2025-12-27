@@ -9,18 +9,20 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/serroba/web-demo-go/internal/analytics"
+	"github.com/serroba/web-demo-go/internal/messaging"
 	"github.com/serroba/web-demo-go/internal/shortener"
 	"go.uber.org/zap"
 )
 
 // URLHandler handles URL shortening operations.
 type URLHandler struct {
-	strategies      map[Strategy]shortener.Strategy
-	store           shortener.Repository
-	baseURL         string
-	defaultStrategy Strategy
-	publisher       *analytics.Publisher
-	logger          *zap.Logger
+	strategies         map[Strategy]shortener.Strategy
+	store              shortener.Repository
+	baseURL            string
+	defaultStrategy    Strategy
+	publishURLCreated  messaging.Publish[analytics.URLCreatedEvent]
+	publishURLAccessed messaging.Publish[analytics.URLAccessedEvent]
+	logger             *zap.Logger
 }
 
 // NewURLHandler creates a new URL handler with injected strategies.
@@ -28,16 +30,18 @@ func NewURLHandler(
 	store shortener.Repository,
 	baseURL string,
 	strategies map[Strategy]shortener.Strategy,
-	publisher *analytics.Publisher,
+	publishURLCreated messaging.Publish[analytics.URLCreatedEvent],
+	publishURLAccessed messaging.Publish[analytics.URLAccessedEvent],
 	logger *zap.Logger,
 ) *URLHandler {
 	return &URLHandler{
-		strategies:      strategies,
-		store:           store,
-		baseURL:         baseURL,
-		defaultStrategy: StrategyToken,
-		publisher:       publisher,
-		logger:          logger,
+		strategies:         strategies,
+		store:              store,
+		baseURL:            baseURL,
+		defaultStrategy:    StrategyToken,
+		publishURLCreated:  publishURLCreated,
+		publishURLAccessed: publishURLAccessed,
+		logger:             logger,
 	}
 }
 
@@ -92,7 +96,7 @@ func (h *URLHandler) CreateShortURL(ctx context.Context, req *CreateShortURLRequ
 		UserAgent:   meta.UserAgent,
 	}
 
-	if err := h.publisher.PublishURLCreated(event); err != nil {
+	if err := h.publishURLCreated(event); err != nil {
 		h.logger.Error("failed to publish analytics event",
 			zap.String("code", event.Code),
 			zap.Error(err),
@@ -129,7 +133,7 @@ func (h *URLHandler) RedirectToURL(ctx context.Context, req *RedirectRequest) (*
 		Referrer:   meta.Referrer,
 	}
 
-	if err = h.publisher.PublishURLAccessed(event); err != nil {
+	if err = h.publishURLAccessed(event); err != nil {
 		h.logger.Error("failed to publish access event",
 			zap.String("code", event.Code),
 			zap.Error(err),

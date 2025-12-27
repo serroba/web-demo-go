@@ -21,7 +21,7 @@ func registerPackages(injector *do.Injector, options *container.Options) {
 	container.RedisPackage(injector)
 	container.RepositoryPackage(injector)
 	container.RateLimitPackage(injector)
-	container.AnalyticsPackage(injector)
+	container.PublisherGroupPackage(injector)
 	container.HTTPPackage(injector)
 }
 

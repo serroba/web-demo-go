@@ -7,8 +7,8 @@ import (
 	"syscall"
 
 	"github.com/samber/do"
-	"github.com/serroba/web-demo-go/internal/analytics"
 	"github.com/serroba/web-demo-go/internal/container"
+	"github.com/serroba/web-demo-go/internal/messaging"
 	"go.uber.org/zap"
 )
 
@@ -22,18 +22,16 @@ func main() {
 	do.ProvideValue(injector, opts)
 	container.LoggerPackage(injector)
 	container.RedisPackage(injector)
-	container.AnalyticsConsumerPackage(injector)
+	container.ConsumerGroupPackage(injector)
 
 	logger := do.MustInvoke[*zap.Logger](injector)
-	consumer := do.MustInvoke[*analytics.Consumer](injector)
+	group := do.MustInvoke[*messaging.ConsumerGroup](injector)
 
 	ctx, cancel := context.WithCancel(context.Background())
 
-	if err := consumer.Start(ctx); err != nil {
-		logger.Fatal("failed to start consumer", zap.Error(err))
+	if err := group.Start(ctx); err != nil {
+		logger.Fatal("failed to start consumer group", zap.Error(err))
 	}
-
-	logger.Info("analytics consumer started")
 
 	// Wait for shutdown signal
 	sigChan := make(chan os.Signal, 1)

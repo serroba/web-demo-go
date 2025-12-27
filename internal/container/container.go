@@ -18,6 +18,7 @@ import (
 	"github.com/serroba/web-demo-go/internal/cache"
 	"github.com/serroba/web-demo-go/internal/handlers"
 	"github.com/serroba/web-demo-go/internal/health"
+	"github.com/serroba/web-demo-go/internal/messaging"
 	"github.com/serroba/web-demo-go/internal/middleware"
 	"github.com/serroba/web-demo-go/internal/ratelimit"
 	ratelimitstore "github.com/serroba/web-demo-go/internal/ratelimit/store"
@@ -27,14 +28,17 @@ import (
 )
 
 type Options struct {
-	Port            int           `default:"8888"           help:"Port to listen on"    short:"p"`
-	CodeLength      int           `default:"8"              help:"Short code length"    short:"c"`
-	RedisAddr       string        `default:"localhost:6379" help:"Redis server address" short:"r"`
-	RateLimitReqs   int64         `default:"100"            env:"RATE_LIMIT_REQUESTS"   help:"Requests per window"`
-	RateLimitWindow time.Duration `default:"1m"             env:"RATE_LIMIT_WINDOW"     help:"Rate limit window"`
-	RateLimitStore  string        `default:"memory"         env:"RATE_LIMIT_STORE"      help:"memory or redis"`
-	CacheSize       int           `default:"1000"           env:"CACHE_SIZE"            help:"LRU cache size (0=off)"`
-	LogFormat       string        `default:"console"        env:"LOG_FORMAT"            help:"Log format: console or json"`
+	Port             int           `default:"8888"           help:"Port to listen on"  short:"p"`
+	CodeLength       int           `default:"8"              help:"Short code length"  short:"c"`
+	RedisAddr        string        `default:"localhost:6379" help:"Redis address"      short:"r"`
+	RateLimitReqs    int64         `default:"100"            env:"RATE_LIMIT_REQUESTS" help:"Requests per window"`
+	RateLimitWindow  time.Duration `default:"1m"             env:"RATE_LIMIT_WINDOW"   help:"Rate limit window"`
+	RateLimitStore   string        `default:"memory"         env:"RATE_LIMIT_STORE"    help:"memory or redis"`
+	CacheSize        int           `default:"1000"           env:"CACHE_SIZE"          help:"LRU cache size (0=off)"`
+	LogFormat        string        `default:"console"        env:"LOG_FORMAT"          help:"console or json"`
+	TopicURLCreated  string        `default:"url.created"    env:"TOPIC_URL_CREATED"   help:"URL created topic"`
+	TopicURLAccessed string        `default:"url.accessed"   env:"TOPIC_URL_ACCESSED"  help:"URL accessed topic"`
+	ConsumerGroup    string        `default:"analytics"      env:"CONSUMER_GROUP"      help:"Consumer group name"`
 }
 
 // LoggerPackage provides the zap logger.
@@ -92,9 +96,9 @@ func RateLimitPackage(i *do.Injector) {
 	})
 }
 
-// AnalyticsPackage provides the analytics publisher.
-func AnalyticsPackage(i *do.Injector) {
-	do.Provide(i, func(i *do.Injector) (*analytics.Publisher, error) {
+// PublisherGroupPackage provides the publisher group for event publishing.
+func PublisherGroupPackage(i *do.Injector) {
+	do.Provide(i, func(i *do.Injector) (*messaging.PublisherGroup, error) {
 		redisClient := do.MustInvoke[*redis.Client](i)
 
 		publisher, err := redisstream.NewPublisher(
@@ -107,20 +111,21 @@ func AnalyticsPackage(i *do.Injector) {
 			return nil, err
 		}
 
-		return analytics.NewPublisher(publisher), nil
+		return messaging.NewPublisherGroup(publisher), nil
 	})
 }
 
-// AnalyticsConsumerPackage provides the analytics consumer.
-func AnalyticsConsumerPackage(i *do.Injector) {
-	do.Provide(i, func(i *do.Injector) (*analytics.Consumer, error) {
+// ConsumerGroupPackage provides the consumer group with all registered consumers.
+func ConsumerGroupPackage(i *do.Injector) {
+	do.Provide(i, func(i *do.Injector) (*messaging.ConsumerGroup, error) {
+		opts := do.MustInvoke[*Options](i)
 		redisClient := do.MustInvoke[*redis.Client](i)
 		logger := do.MustInvoke[*zap.Logger](i)
 
 		subscriber, err := redisstream.NewSubscriber(
 			redisstream.SubscriberConfig{
 				Client:        redisClient,
-				ConsumerGroup: "analytics-consumer",
+				ConsumerGroup: opts.ConsumerGroup,
 			},
 			watermill.NopLogger{},
 		)
@@ -128,9 +133,25 @@ func AnalyticsConsumerPackage(i *do.Injector) {
 			return nil, err
 		}
 
-		store := analyticsstore.NewNoop(logger)
+		analyticsStore := analyticsstore.NewNoop(logger)
+		group := messaging.NewConsumerGroup(subscriber, logger)
 
-		return analytics.NewConsumer(subscriber, store, logger), nil
+		// Register analytics consumers
+		group.Add(messaging.NewConsumer(
+			subscriber,
+			opts.TopicURLCreated,
+			analyticsStore.SaveURLCreated,
+			logger,
+		))
+
+		group.Add(messaging.NewConsumer(
+			subscriber,
+			opts.TopicURLAccessed,
+			analyticsStore.SaveURLAccessed,
+			logger,
+		))
+
+		return group, nil
 	})
 }
 
@@ -147,7 +168,7 @@ func HTTPPackage(i *do.Injector) {
 		redisClient := do.MustInvoke[*redis.Client](i)
 		urlStore := do.MustInvoke[shortener.Repository](i)
 		rateLimitStore := do.MustInvoke[ratelimit.Store](i)
-		analyticsPublisher := do.MustInvoke[*analytics.Publisher](i)
+		publisherGroup := do.MustInvoke[*messaging.PublisherGroup](i)
 
 		api := humachi.New(router, huma.DefaultConfig("URL Shortener", "1.0.0"))
 
@@ -166,7 +187,15 @@ func HTTPPackage(i *do.Injector) {
 			handlers.StrategyHash:  shortener.NewHashStrategy(urlStore, codeGenerator),
 		}
 
-		urlHandler := handlers.NewURLHandler(urlStore, baseURL, strategies, analyticsPublisher, logger)
+		pub := publisherGroup.Publisher()
+		urlHandler := handlers.NewURLHandler(
+			urlStore,
+			baseURL,
+			strategies,
+			messaging.NewPublishFunc[analytics.URLCreatedEvent](pub, opts.TopicURLCreated),
+			messaging.NewPublishFunc[analytics.URLAccessedEvent](pub, opts.TopicURLAccessed),
+			logger,
+		)
 		healthHandler := health.NewHandler(health.NewRedisChecker(redisClient))
 
 		// Register routes

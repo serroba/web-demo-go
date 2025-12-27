@@ -6,10 +6,10 @@ import (
 	"net/http"
 	"testing"
 
-	"github.com/ThreeDotsLabs/watermill/message"
 	"github.com/jaevor/go-nanoid"
 	"github.com/serroba/web-demo-go/internal/analytics"
 	"github.com/serroba/web-demo-go/internal/handlers"
+	"github.com/serroba/web-demo-go/internal/messaging"
 	"github.com/serroba/web-demo-go/internal/shortener"
 	"github.com/serroba/web-demo-go/internal/store"
 	"github.com/stretchr/testify/assert"
@@ -17,21 +17,17 @@ import (
 	"go.uber.org/zap"
 )
 
-type mockMessagePublisher struct {
-	publishErr error
+// noopPublish returns a publish function that always succeeds.
+func noopPublish[T any]() messaging.Publish[T] {
+	return func(_ *T) error { return nil }
 }
 
-func (m *mockMessagePublisher) Publish(_ string, _ ...*message.Message) error {
-	return m.publishErr
+// errorPublish returns a publish function that always fails.
+func errorPublish[T any](err error) messaging.Publish[T] {
+	return func(_ *T) error { return err }
 }
-
-func (m *mockMessagePublisher) Close() error { return nil }
 
 func newTestHandler(s shortener.Repository) *handlers.URLHandler {
-	return newTestHandlerWithPublisher(s, &mockMessagePublisher{})
-}
-
-func newTestHandlerWithPublisher(s shortener.Repository, msgPub message.Publisher) *handlers.URLHandler {
 	gen, _ := nanoid.Standard(8)
 
 	strategies := map[handlers.Strategy]shortener.Strategy{
@@ -39,10 +35,32 @@ func newTestHandlerWithPublisher(s shortener.Repository, msgPub message.Publishe
 		handlers.StrategyHash:  shortener.NewHashStrategy(s, gen),
 	}
 
-	publisher := analytics.NewPublisher(msgPub)
-	logger := zap.NewNop()
+	return handlers.NewURLHandler(
+		s,
+		"http://localhost:8888",
+		strategies,
+		noopPublish[analytics.URLCreatedEvent](),
+		noopPublish[analytics.URLAccessedEvent](),
+		zap.NewNop(),
+	)
+}
 
-	return handlers.NewURLHandler(s, "http://localhost:8888", strategies, publisher, logger)
+func newTestHandlerWithPublishError(s shortener.Repository) *handlers.URLHandler {
+	gen, _ := nanoid.Standard(8)
+
+	strategies := map[handlers.Strategy]shortener.Strategy{
+		handlers.StrategyToken: shortener.NewTokenStrategy(s, gen),
+		handlers.StrategyHash:  shortener.NewHashStrategy(s, gen),
+	}
+
+	return handlers.NewURLHandler(
+		s,
+		"http://localhost:8888",
+		strategies,
+		errorPublish[analytics.URLCreatedEvent](errors.New("publish error")),
+		errorPublish[analytics.URLAccessedEvent](errors.New("publish error")),
+		zap.NewNop(),
+	)
 }
 
 func TestCreateShortURL(t *testing.T) {
@@ -298,8 +316,7 @@ func TestCreateShortURL_WithRequestMeta(t *testing.T) {
 func TestCreateShortURL_PublishError(t *testing.T) {
 	t.Run("succeeds even when publish fails", func(t *testing.T) {
 		memStore := store.NewMemoryStore()
-		mockPub := &mockMessagePublisher{publishErr: errors.New("publish error")}
-		handler := newTestHandlerWithPublisher(memStore, mockPub)
+		handler := newTestHandlerWithPublishError(memStore)
 
 		req := &handlers.CreateShortURLRequest{}
 		req.Body.URL = "https://example.com"
@@ -344,8 +361,7 @@ func TestRedirectToURL_PublishError(t *testing.T) {
 			Code:        "abc123",
 			OriginalURL: testURL,
 		})
-		mockPub := &mockMessagePublisher{publishErr: errors.New("publish error")}
-		handler := newTestHandlerWithPublisher(memStore, mockPub)
+		handler := newTestHandlerWithPublishError(memStore)
 
 		req := &handlers.RedirectRequest{Code: "abc123"}
 
