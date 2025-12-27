@@ -15,16 +15,20 @@ import (
 	"go.uber.org/zap"
 )
 
+func registerPackages(injector *do.Injector, options *container.Options) {
+	do.ProvideValue(injector, options)
+	container.LoggerPackage(injector)
+	container.RedisPackage(injector)
+	container.RepositoryPackage(injector)
+	container.RateLimitPackage(injector)
+	container.AnalyticsPackage(injector)
+	container.HTTPPackage(injector)
+}
+
 func main() {
 	cli := humacli.New(func(hooks humacli.Hooks, options *container.Options) {
 		injector := do.New()
-		do.ProvideValue(injector, options)
-		container.LoggerPackage(injector)
-		container.RedisPackage(injector)
-		container.RepositoryPackage(injector)
-		container.RateLimitPackage(injector)
-		container.AnalyticsPackage(injector)
-		container.HTTPPackage(injector)
+		registerPackages(injector, options)
 
 		logger := do.MustInvoke[*zap.Logger](injector)
 
