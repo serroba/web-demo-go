@@ -19,6 +19,7 @@ func registerPackages(injector *do.Injector, options *container.Options) {
 	do.ProvideValue(injector, options)
 	container.LoggerPackage(injector)
 	container.RedisPackage(injector)
+	container.PostgresPackage(injector)
 	container.RepositoryPackage(injector)
 	container.RateLimitPackage(injector)
 	container.PublisherGroupPackage(injector)

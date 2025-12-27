@@ -1,6 +1,7 @@
 package container
 
 import (
+	"context"
 	"fmt"
 	"time"
 
@@ -10,6 +11,7 @@ import (
 	"github.com/danielgtaylor/huma/v2/adapters/humachi"
 	_ "github.com/danielgtaylor/huma/v2/formats/cbor" // CBOR format support for huma
 	"github.com/go-chi/chi/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/jaevor/go-nanoid"
 	"github.com/redis/go-redis/v9"
 	"github.com/samber/do"
@@ -31,10 +33,12 @@ type Options struct {
 	Port             int           `default:"8888"           help:"Port to listen on"  short:"p"`
 	CodeLength       int           `default:"8"              help:"Short code length"  short:"c"`
 	RedisAddr        string        `default:"localhost:6379" help:"Redis address"      short:"r"`
+	DatabaseURL      string        `env:"DATABASE_URL"       help:"PostgreSQL URL"     required:""`
 	RateLimitReqs    int64         `default:"100"            env:"RATE_LIMIT_REQUESTS" help:"Requests per window"`
 	RateLimitWindow  time.Duration `default:"1m"             env:"RATE_LIMIT_WINDOW"   help:"Rate limit window"`
 	RateLimitStore   string        `default:"memory"         env:"RATE_LIMIT_STORE"    help:"memory or redis"`
 	CacheSize        int           `default:"1000"           env:"CACHE_SIZE"          help:"LRU cache size (0=off)"`
+	CacheTTL         time.Duration `default:"1h"             env:"CACHE_TTL"           help:"Redis cache TTL"`
 	LogFormat        string        `default:"console"        env:"LOG_FORMAT"          help:"console or json"`
 	TopicURLCreated  string        `default:"url.created"    env:"TOPIC_URL_CREATED"   help:"URL created topic"`
 	TopicURLAccessed string        `default:"url.accessed"   env:"TOPIC_URL_ACCESSED"  help:"URL accessed topic"`
@@ -65,14 +69,29 @@ func RedisPackage(i *do.Injector) {
 	})
 }
 
-// RepositoryPackage provides the URL repository with optional caching.
+// PostgresPackage provides the PostgreSQL connection pool.
+func PostgresPackage(i *do.Injector) {
+	do.Provide(i, func(i *do.Injector) (*pgxpool.Pool, error) {
+		opts := do.MustInvoke[*Options](i)
+
+		return pgxpool.New(context.Background(), opts.DatabaseURL)
+	})
+}
+
+// RepositoryPackage provides the URL repository with Redis caching over PostgreSQL.
 func RepositoryPackage(i *do.Injector) {
 	do.Provide(i, func(i *do.Injector) (shortener.Repository, error) {
 		opts := do.MustInvoke[*Options](i)
+		pool := do.MustInvoke[*pgxpool.Pool](i)
 		redisClient := do.MustInvoke[*redis.Client](i)
 
-		var repo shortener.Repository = store.NewRedisStore(redisClient)
+		// PostgreSQL as source of truth
+		postgresStore := store.NewPostgresStore(pool)
 
+		// Redis cache layer with configurable TTL
+		var repo shortener.Repository = store.NewRedisCacheRepository(postgresStore, redisClient, opts.CacheTTL)
+
+		// Optional in-memory LRU cache on top
 		if opts.CacheSize > 0 {
 			repo = store.NewCachedRepository(repo, cache.New(opts.CacheSize))
 		}
