@@ -261,16 +261,15 @@ func TestCreateShortURL_ErrorPaths(t *testing.T) {
 
 func TestContextWithRequestMeta(t *testing.T) {
 	t.Run("adds and retrieves request metadata from context", func(t *testing.T) {
-		ctx := handlers.ContextWithRequestMeta(
-			context.Background(),
-			"192.168.1.1",
-			"TestAgent/1.0",
-			"https://referrer.com",
-		)
+		meta := handlers.RequestMeta{
+			ClientIP:  "192.168.1.1",
+			UserAgent: "TestAgent/1.0",
+			Referrer:  "https://referrer.com",
+		}
+		ctx := handlers.ContextWithRequestMeta(context.Background(), meta)
 
-		// The context values are private, but we can verify the function doesn't panic
-		// and the handler uses them correctly
-		assert.NotNil(t, ctx)
+		retrieved := handlers.RequestMetaFromContext(ctx)
+		assert.Equal(t, meta, retrieved)
 	})
 }
 
@@ -279,12 +278,12 @@ func TestCreateShortURL_WithRequestMeta(t *testing.T) {
 		memStore := store.NewMemoryStore()
 		handler := newTestHandler(memStore)
 
-		ctx := handlers.ContextWithRequestMeta(
-			context.Background(),
-			"192.168.1.1",
-			"TestAgent/1.0",
-			"https://referrer.com",
-		)
+		meta := handlers.RequestMeta{
+			ClientIP:  "192.168.1.1",
+			UserAgent: "TestAgent/1.0",
+			Referrer:  "https://referrer.com",
+		}
+		ctx := handlers.ContextWithRequestMeta(context.Background(), meta)
 
 		req := &handlers.CreateShortURLRequest{}
 		req.Body.URL = "https://example.com"
@@ -322,12 +321,12 @@ func TestRedirectToURL_WithRequestMeta(t *testing.T) {
 		})
 		handler := newTestHandler(memStore)
 
-		ctx := handlers.ContextWithRequestMeta(
-			context.Background(),
-			"192.168.1.1",
-			"TestAgent/1.0",
-			"https://referrer.com",
-		)
+		meta := handlers.RequestMeta{
+			ClientIP:  "192.168.1.1",
+			UserAgent: "TestAgent/1.0",
+			Referrer:  "https://referrer.com",
+		}
+		ctx := handlers.ContextWithRequestMeta(context.Background(), meta)
 
 		req := &handlers.RedirectRequest{Code: "abc123"}
 

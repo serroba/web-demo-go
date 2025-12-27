@@ -10,11 +10,13 @@ import (
 // RequestMeta is a middleware that adds client IP, user-agent, and referrer to the request context.
 func RequestMeta(_ huma.API) func(ctx huma.Context, next func(huma.Context)) {
 	return func(ctx huma.Context, next func(huma.Context)) {
-		clientIP := extractClientIP(ctx)
-		userAgent := ctx.Header("User-Agent")
-		referrer := ctx.Header("Referer")
+		meta := handlers.RequestMeta{
+			ClientIP:  extractClientIP(ctx),
+			UserAgent: ctx.Header("User-Agent"),
+			Referrer:  ctx.Header("Referer"),
+		}
 
-		newCtx := handlers.ContextWithRequestMeta(ctx.Context(), clientIP, userAgent, referrer)
+		newCtx := handlers.ContextWithRequestMeta(ctx.Context(), meta)
 		ctx = huma.WithContext(ctx, newCtx)
 
 		next(ctx)

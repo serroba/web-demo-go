@@ -41,45 +41,27 @@ func NewURLHandler(
 	}
 }
 
-type contextKey string
+type requestMetaKey struct{}
 
-const (
-	clientIPKey  contextKey = "clientIP"
-	userAgentKey contextKey = "userAgent"
-	referrerKey  contextKey = "referrer"
-)
-
-// ContextWithRequestMeta adds client IP, user-agent, and referrer to context.
-func ContextWithRequestMeta(ctx context.Context, clientIP, userAgent, referrer string) context.Context {
-	ctx = context.WithValue(ctx, clientIPKey, clientIP)
-	ctx = context.WithValue(ctx, userAgentKey, userAgent)
-	ctx = context.WithValue(ctx, referrerKey, referrer)
-
-	return ctx
+// RequestMeta holds HTTP request metadata for analytics.
+type RequestMeta struct {
+	ClientIP  string
+	UserAgent string
+	Referrer  string
 }
 
-func clientIPFromContext(ctx context.Context) string {
-	if v, ok := ctx.Value(clientIPKey).(string); ok {
+// ContextWithRequestMeta adds request metadata to context.
+func ContextWithRequestMeta(ctx context.Context, meta RequestMeta) context.Context {
+	return context.WithValue(ctx, requestMetaKey{}, meta)
+}
+
+// RequestMetaFromContext extracts request metadata from context.
+func RequestMetaFromContext(ctx context.Context) RequestMeta {
+	if v, ok := ctx.Value(requestMetaKey{}).(RequestMeta); ok {
 		return v
 	}
 
-	return ""
-}
-
-func userAgentFromContext(ctx context.Context) string {
-	if v, ok := ctx.Value(userAgentKey).(string); ok {
-		return v
-	}
-
-	return ""
-}
-
-func referrerFromContext(ctx context.Context) string {
-	if v, ok := ctx.Value(referrerKey).(string); ok {
-		return v
-	}
-
-	return ""
+	return RequestMeta{}
 }
 
 func (h *URLHandler) CreateShortURL(ctx context.Context, req *CreateShortURLRequest) (*CreateShortURLResponse, error) {
@@ -99,14 +81,15 @@ func (h *URLHandler) CreateShortURL(ctx context.Context, req *CreateShortURLRequ
 	}
 
 	// Publish analytics event
+	meta := RequestMetaFromContext(ctx)
 	event := &analytics.URLCreatedEvent{
 		Code:        string(shortURL.Code),
 		OriginalURL: shortURL.OriginalURL,
 		URLHash:     string(shortURL.URLHash),
 		Strategy:    string(strategyName),
 		CreatedAt:   shortURL.CreatedAt,
-		ClientIP:    clientIPFromContext(ctx),
-		UserAgent:   userAgentFromContext(ctx),
+		ClientIP:    meta.ClientIP,
+		UserAgent:   meta.UserAgent,
 	}
 
 	if err := h.publisher.PublishURLCreated(event); err != nil {
@@ -137,12 +120,13 @@ func (h *URLHandler) RedirectToURL(ctx context.Context, req *RedirectRequest) (*
 		return nil, huma.Error500InternalServerError("failed to get url")
 	}
 
+	meta := RequestMetaFromContext(ctx)
 	event := &analytics.URLAccessedEvent{
 		Code:       req.Code,
 		AccessedAt: time.Now(),
-		ClientIP:   clientIPFromContext(ctx),
-		UserAgent:  userAgentFromContext(ctx),
-		Referrer:   referrerFromContext(ctx),
+		ClientIP:   meta.ClientIP,
+		UserAgent:  meta.UserAgent,
+		Referrer:   meta.Referrer,
 	}
 
 	if err = h.publisher.PublishURLAccessed(event); err != nil {

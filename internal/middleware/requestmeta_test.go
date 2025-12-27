@@ -9,6 +9,7 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/danielgtaylor/huma/v2/adapters/humachi"
 	"github.com/go-chi/chi/v5"
+	"github.com/serroba/web-demo-go/internal/handlers"
 	"github.com/serroba/web-demo-go/internal/middleware"
 	"github.com/stretchr/testify/assert"
 )
@@ -49,6 +50,10 @@ func TestRequestMeta(t *testing.T) {
 
 		capturedCtx := <-ctxChan
 		assert.NotNil(t, capturedCtx)
+
+		meta := handlers.RequestMetaFromContext(capturedCtx)
+		assert.Equal(t, "https://example.com", meta.Referrer)
+		assert.Equal(t, "TestAgent/1.0", meta.UserAgent)
 	})
 
 	t.Run("extracts IP from X-Forwarded-For with single IP", func(t *testing.T) {
