@@ -69,12 +69,34 @@ func RedisPackage(i *do.Injector) {
 	})
 }
 
+// PostgresPool wraps pgxpool.Pool to implement Shutdownable for do.Injector.
+type PostgresPool struct {
+	*pgxpool.Pool
+}
+
+// Shutdown implements do.Shutdownable.
+func (p *PostgresPool) Shutdown() error {
+	if p.Pool != nil {
+		p.Close()
+	}
+
+	return nil
+}
+
 // PostgresPackage provides the PostgreSQL connection pool.
 func PostgresPackage(i *do.Injector) {
-	do.Provide(i, func(i *do.Injector) (*pgxpool.Pool, error) {
+	do.Provide(i, func(i *do.Injector) (*PostgresPool, error) {
 		opts := do.MustInvoke[*Options](i)
 
-		return pgxpool.New(context.Background(), opts.DatabaseURL)
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+
+		pool, err := pgxpool.New(ctx, opts.DatabaseURL)
+		if err != nil {
+			return nil, err
+		}
+
+		return &PostgresPool{Pool: pool}, nil
 	})
 }
 
@@ -82,11 +104,11 @@ func PostgresPackage(i *do.Injector) {
 func RepositoryPackage(i *do.Injector) {
 	do.Provide(i, func(i *do.Injector) (shortener.Repository, error) {
 		opts := do.MustInvoke[*Options](i)
-		pool := do.MustInvoke[*pgxpool.Pool](i)
+		pool := do.MustInvoke[*PostgresPool](i)
 		redisClient := do.MustInvoke[*redis.Client](i)
 
 		// PostgreSQL as source of truth
-		postgresStore := store.NewPostgresStore(pool)
+		postgresStore := store.NewPostgresStore(pool.Pool)
 
 		// Redis cache layer with configurable TTL
 		var repo shortener.Repository = store.NewRedisCacheRepository(postgresStore, redisClient, opts.CacheTTL)
