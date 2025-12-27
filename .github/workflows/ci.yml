@@ -120,6 +120,11 @@ jobs:
       - name: Install Atlas CLI
         uses: ariga/setup-atlas@v0
 
+      - name: Enable TimescaleDB extension
+        run: |
+          psql "postgresql://shortener:shortener@localhost:5432/shortener" \
+            -c "CREATE EXTENSION IF NOT EXISTS timescaledb CASCADE;"
+
       - name: Run database migrations
         env:
           DATABASE_URL: postgres://shortener:shortener@localhost:5432/shortener?sslmode=disable
@@ -194,6 +199,11 @@ jobs:
 
       - name: Install Atlas CLI
         uses: ariga/setup-atlas@v0
+
+      - name: Enable TimescaleDB extension
+        run: |
+          psql "postgresql://shortener:shortener@localhost:5432/shortener" \
+            -c "CREATE EXTENSION IF NOT EXISTS timescaledb CASCADE;"
 
       - name: Run database migrations
         env:

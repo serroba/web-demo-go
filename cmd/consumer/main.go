@@ -14,14 +14,17 @@ import (
 
 func main() {
 	opts := &container.Options{
-		RedisAddr: getEnv("REDIS_ADDR", "localhost:6379"),
-		LogFormat: getEnv("LOG_FORMAT", "console"),
+		RedisAddr:   getEnv("REDIS_ADDR", "localhost:6379"),
+		DatabaseURL: getEnv("DATABASE_URL", ""),
+		LogFormat:   getEnv("LOG_FORMAT", "console"),
 	}
 
 	injector := do.New()
 	do.ProvideValue(injector, opts)
 	container.LoggerPackage(injector)
 	container.RedisPackage(injector)
+	container.PostgresPackage(injector)
+	container.AnalyticsStorePackage(injector)
 	container.ConsumerGroupPackage(injector)
 
 	logger := do.MustInvoke[*zap.Logger](injector)

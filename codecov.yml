@@ -12,3 +12,4 @@ ignore:
   - "internal/store/redis.go"
   - "internal/store/postgres.go"
   - "internal/store/redis_cache.go"
+  - "internal/analytics/store/postgres.go"
