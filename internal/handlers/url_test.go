@@ -2,6 +2,7 @@ package handlers_test
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"testing"
 
@@ -16,12 +17,21 @@ import (
 	"go.uber.org/zap"
 )
 
-type mockPublisher struct{}
+type mockMessagePublisher struct {
+	publishErr error
+}
 
-func (m *mockPublisher) Publish(_ string, _ ...*message.Message) error { return nil }
-func (m *mockPublisher) Close() error                                  { return nil }
+func (m *mockMessagePublisher) Publish(_ string, _ ...*message.Message) error {
+	return m.publishErr
+}
+
+func (m *mockMessagePublisher) Close() error { return nil }
 
 func newTestHandler(s shortener.Repository) *handlers.URLHandler {
+	return newTestHandlerWithPublisher(s, &mockMessagePublisher{})
+}
+
+func newTestHandlerWithPublisher(s shortener.Repository, msgPub message.Publisher) *handlers.URLHandler {
 	gen, _ := nanoid.Standard(8)
 
 	strategies := map[handlers.Strategy]shortener.Strategy{
@@ -29,7 +39,7 @@ func newTestHandler(s shortener.Repository) *handlers.URLHandler {
 		handlers.StrategyHash:  shortener.NewHashStrategy(s, gen),
 	}
 
-	publisher := analytics.NewPublisher(&mockPublisher{})
+	publisher := analytics.NewPublisher(msgPub)
 	logger := zap.NewNop()
 
 	return handlers.NewURLHandler(s, "http://localhost:8888", strategies, publisher, logger)
@@ -246,5 +256,103 @@ func TestCreateShortURL_ErrorPaths(t *testing.T) {
 
 		assert.Nil(t, resp)
 		assert.Error(t, err)
+	})
+}
+
+func TestContextWithRequestMeta(t *testing.T) {
+	t.Run("adds and retrieves request metadata from context", func(t *testing.T) {
+		meta := handlers.RequestMeta{
+			ClientIP:  "192.168.1.1",
+			UserAgent: "TestAgent/1.0",
+			Referrer:  "https://referrer.com",
+		}
+		ctx := handlers.ContextWithRequestMeta(context.Background(), meta)
+
+		retrieved := handlers.RequestMetaFromContext(ctx)
+		assert.Equal(t, meta, retrieved)
+	})
+}
+
+func TestCreateShortURL_WithRequestMeta(t *testing.T) {
+	t.Run("uses request metadata from context", func(t *testing.T) {
+		memStore := store.NewMemoryStore()
+		handler := newTestHandler(memStore)
+
+		meta := handlers.RequestMeta{
+			ClientIP:  "192.168.1.1",
+			UserAgent: "TestAgent/1.0",
+			Referrer:  "https://referrer.com",
+		}
+		ctx := handlers.ContextWithRequestMeta(context.Background(), meta)
+
+		req := &handlers.CreateShortURLRequest{}
+		req.Body.URL = "https://example.com"
+
+		resp, err := handler.CreateShortURL(ctx, req)
+
+		require.NoError(t, err)
+		assert.NotEmpty(t, resp.Body.Code)
+	})
+}
+
+func TestCreateShortURL_PublishError(t *testing.T) {
+	t.Run("succeeds even when publish fails", func(t *testing.T) {
+		memStore := store.NewMemoryStore()
+		mockPub := &mockMessagePublisher{publishErr: errors.New("publish error")}
+		handler := newTestHandlerWithPublisher(memStore, mockPub)
+
+		req := &handlers.CreateShortURLRequest{}
+		req.Body.URL = "https://example.com"
+
+		resp, err := handler.CreateShortURL(context.Background(), req)
+
+		// Should succeed - publish errors are logged, not returned
+		require.NoError(t, err)
+		assert.NotEmpty(t, resp.Body.Code)
+	})
+}
+
+func TestRedirectToURL_WithRequestMeta(t *testing.T) {
+	t.Run("uses request metadata from context", func(t *testing.T) {
+		memStore := store.NewMemoryStore()
+		_ = memStore.Save(context.Background(), &shortener.ShortURL{
+			Code:        "abc123",
+			OriginalURL: testURL,
+		})
+		handler := newTestHandler(memStore)
+
+		meta := handlers.RequestMeta{
+			ClientIP:  "192.168.1.1",
+			UserAgent: "TestAgent/1.0",
+			Referrer:  "https://referrer.com",
+		}
+		ctx := handlers.ContextWithRequestMeta(context.Background(), meta)
+
+		req := &handlers.RedirectRequest{Code: "abc123"}
+
+		resp, err := handler.RedirectToURL(ctx, req)
+
+		require.NoError(t, err)
+		assert.Equal(t, http.StatusMovedPermanently, resp.Status)
+	})
+}
+
+func TestRedirectToURL_PublishError(t *testing.T) {
+	t.Run("succeeds even when publish fails", func(t *testing.T) {
+		memStore := store.NewMemoryStore()
+		_ = memStore.Save(context.Background(), &shortener.ShortURL{
+			Code:        "abc123",
+			OriginalURL: testURL,
+		})
+		mockPub := &mockMessagePublisher{publishErr: errors.New("publish error")}
+		handler := newTestHandlerWithPublisher(memStore, mockPub)
+
+		req := &handlers.RedirectRequest{Code: "abc123"}
+
+		resp, err := handler.RedirectToURL(context.Background(), req)
+
+		// Should succeed - publish errors are logged, not returned
+		require.NoError(t, err)
+		assert.Equal(t, http.StatusMovedPermanently, resp.Status)
 	})
 }

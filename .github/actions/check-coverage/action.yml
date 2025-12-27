@@ -19,13 +19,14 @@ runs:
     - name: Download cs-coverage tool
       shell: bash
       run: |
-        curl -sSL https://downloads.codescene.io/enterprise/cli/cs-coverage/linux-amd64/cs-coverage -o cs-coverage
+        curl -fsSL https://downloads.codescene.io/enterprise/cli/cs-coverage-linux-amd64-latest.zip -o cs-coverage.zip
+        unzip -o cs-coverage.zip
         chmod +x cs-coverage
 
     - name: Run coverage check
       shell: bash
       env:
-        CODESCENE_ACCESS_TOKEN: ${{ inputs.access-token }}
+        CS_ACCESS_TOKEN: ${{ inputs.access-token }}
       run: |
         ./cs-coverage \
           --project-url "${{ inputs.project-url }}" \

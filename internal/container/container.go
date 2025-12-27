@@ -14,6 +14,7 @@ import (
 	"github.com/redis/go-redis/v9"
 	"github.com/samber/do"
 	"github.com/serroba/web-demo-go/internal/analytics"
+	analyticsstore "github.com/serroba/web-demo-go/internal/analytics/store"
 	"github.com/serroba/web-demo-go/internal/cache"
 	"github.com/serroba/web-demo-go/internal/handlers"
 	"github.com/serroba/web-demo-go/internal/health"
@@ -107,6 +108,29 @@ func AnalyticsPackage(i *do.Injector) {
 		}
 
 		return analytics.NewPublisher(publisher), nil
+	})
+}
+
+// AnalyticsConsumerPackage provides the analytics consumer.
+func AnalyticsConsumerPackage(i *do.Injector) {
+	do.Provide(i, func(i *do.Injector) (*analytics.Consumer, error) {
+		redisClient := do.MustInvoke[*redis.Client](i)
+		logger := do.MustInvoke[*zap.Logger](i)
+
+		subscriber, err := redisstream.NewSubscriber(
+			redisstream.SubscriberConfig{
+				Client:        redisClient,
+				ConsumerGroup: "analytics-consumer",
+			},
+			watermill.NopLogger{},
+		)
+		if err != nil {
+			return nil, err
+		}
+
+		store := analyticsstore.NewNoop(logger)
+
+		return analytics.NewConsumer(subscriber, store, logger), nil
 	})
 }
 
