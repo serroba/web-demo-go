@@ -215,8 +215,11 @@ jobs:
 
       - name: Start application
         run: |
-          DATABASE_URL="postgres://shortener:shortener@localhost:5432/shortener?sslmode=disable" ./app &
+          DATABASE_URL="postgres://shortener:shortener@localhost:5432/shortener?sslmode=disable" ./app > app.log 2>&1 &
           echo $! > app.pid
+          sleep 2
+          echo "=== App startup log ==="
+          cat app.log || true
 
       - name: Wait for application to be ready
         run: |
@@ -250,6 +253,12 @@ jobs:
           fi
 
           echo "Smoke test passed!"
+
+      - name: Show app logs on failure
+        if: failure()
+        run: |
+          echo "=== Application logs ==="
+          cat app.log || echo "No app.log found"
 
       - name: Stop application
         if: always()
