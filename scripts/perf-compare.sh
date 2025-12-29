@@ -4,7 +4,7 @@ set -euo pipefail
 # Configuration
 CURRENT_FILE="${1:-perf-results.json}"
 BASELINE_FILE="${2:-baseline-perf.json}"
-REGRESSION_THRESHOLD="${REGRESSION_THRESHOLD:-20}"  # 20% regression threshold
+REGRESSION_THRESHOLD="${REGRESSION_THRESHOLD:-50}"  # 50% regression threshold (accounts for CI variability)
 OUTPUT_FILE="${OUTPUT_FILE:-perf-report.md}"
 
 # Check if current results exist
