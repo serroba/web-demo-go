@@ -215,11 +215,8 @@ jobs:
 
       - name: Start application
         run: |
-          ./app --database-url="postgres://shortener:shortener@localhost:5432/shortener?sslmode=disable" > app.log 2>&1 &
+          ./app --database-url="postgres://shortener:shortener@localhost:5432/shortener?sslmode=disable" &
           echo $! > app.pid
-          sleep 2
-          echo "=== App startup log ==="
-          cat app.log || true
 
       - name: Wait for application to be ready
         run: |
