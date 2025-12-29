@@ -26,3 +26,5 @@ go.work.sum
 /cmd/broker/broker
 /broker
 /server
+/bin/
+/logs/
