@@ -43,11 +43,11 @@ type Options struct {
 	ConsumerGroup    string        `default:"analytics"      env:"CONSUMER_GROUP"     help:"Consumer group name"`
 
 	// Rate limit configuration per scope
-	RateLimitGlobalPerDay   int64 `default:"5000" env:"RATE_LIMIT_GLOBAL_DAY"   help:"Global requests per day"`
-	RateLimitReadPerMinute  int64 `default:"100"  env:"RATE_LIMIT_READ_MINUTE"  help:"Read requests per minute"`
-	RateLimitWritePerMinute int64 `default:"10"   env:"RATE_LIMIT_WRITE_MINUTE" help:"Write requests per minute"`
-	RateLimitWritePerHour   int64 `default:"100"  env:"RATE_LIMIT_WRITE_HOUR"   help:"Write requests per hour"`
-	RateLimitWritePerDay    int64 `default:"500"  env:"RATE_LIMIT_WRITE_DAY"    help:"Write requests per day"`
+	RateLimitGlobalPerDay   int64 `default:"1000000" env:"RATE_LIMIT_GLOBAL_DAY"   help:"Global requests per day"`
+	RateLimitReadPerMinute  int64 `default:"100000"  env:"RATE_LIMIT_READ_MINUTE"  help:"Read requests per minute"`
+	RateLimitWritePerMinute int64 `default:"10"      env:"RATE_LIMIT_WRITE_MINUTE" help:"Write requests per minute"`
+	RateLimitWritePerHour   int64 `default:"100"     env:"RATE_LIMIT_WRITE_HOUR"   help:"Write requests per hour"`
+	RateLimitWritePerDay    int64 `default:"500"     env:"RATE_LIMIT_WRITE_DAY"    help:"Write requests per day"`
 }
 
 // LoggerPackage provides the zap logger.
@@ -204,8 +204,9 @@ func ConsumerGroupPackage(i *do.Injector) {
 			redisstream.SubscriberConfig{
 				Client:        redisClient.Client,
 				ConsumerGroup: opts.ConsumerGroup,
+				Consumer:      "consumer-1",
 			},
-			watermill.NopLogger{},
+			watermill.NewStdLogger(true, true),
 		)
 		if err != nil {
 			return nil, err

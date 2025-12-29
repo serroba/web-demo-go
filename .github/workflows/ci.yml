@@ -263,3 +263,253 @@ jobs:
           if [ -f app.pid ]; then
             kill $(cat app.pid) || true
           fi
+
+  e2e-test:
+    runs-on: ubuntu-latest
+    services:
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+      timescaledb:
+        image: timescale/timescaledb:latest-pg17
+        ports:
+          - 5432:5432
+        env:
+          POSTGRES_USER: shortener
+          POSTGRES_PASSWORD: shortener
+          POSTGRES_DB: shortener
+        options: >-
+          --health-cmd "pg_isready -U shortener -d shortener"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version: 'stable'
+
+      - name: Install Atlas CLI
+        uses: ariga/setup-atlas@v0
+
+      - name: Enable TimescaleDB extension
+        run: |
+          psql "postgresql://shortener:shortener@localhost:5432/shortener" \
+            -c "CREATE EXTENSION IF NOT EXISTS timescaledb CASCADE;"
+
+      - name: Run database migrations
+        env:
+          DATABASE_URL: postgres://shortener:shortener@localhost:5432/shortener?sslmode=disable
+        run: atlas migrate apply --dir file://migrations --url "$DATABASE_URL"
+
+      - name: Build server and consumer
+        run: |
+          go build -o bin/server ./cmd/server
+          go build -o bin/consumer ./cmd/consumer
+
+      - name: Start server
+        run: |
+          ./bin/server --database-url="postgres://shortener:shortener@localhost:5432/shortener?sslmode=disable" &
+          echo $! > server.pid
+
+      - name: Start consumer
+        env:
+          DATABASE_URL: postgres://shortener:shortener@localhost:5432/shortener?sslmode=disable
+          REDIS_ADDR: localhost:6379
+        run: |
+          ./bin/consumer &
+          echo $! > consumer.pid
+
+      - name: Wait for server to be ready
+        run: |
+          for i in {1..30}; do
+            if curl -s http://localhost:8888/health > /dev/null; then
+              echo "Server is ready"
+              exit 0
+            fi
+            echo "Waiting for server... ($i/30)"
+            sleep 1
+          done
+          echo "Server failed to start"
+          exit 1
+
+      - name: Run E2E tests
+        env:
+          BASE_URL: http://localhost:8888
+          DATABASE_URL: postgres://shortener:shortener@localhost:5432/shortener?sslmode=disable
+          E2E_TIMEOUT: "30"
+        run: ./scripts/e2e-test.sh
+
+      - name: Show logs on failure
+        if: failure()
+        run: |
+          echo "=== Server logs ==="
+          cat server.log 2>/dev/null || echo "No server.log found"
+          echo "=== Consumer logs ==="
+          cat consumer.log 2>/dev/null || echo "No consumer.log found"
+
+      - name: Stop services
+        if: always()
+        run: |
+          [ -f server.pid ] && kill $(cat server.pid) 2>/dev/null || true
+          [ -f consumer.pid ] && kill $(cat consumer.pid) 2>/dev/null || true
+
+  performance-test:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request' || github.ref == 'refs/heads/main'
+    permissions:
+      pull-requests: write
+      contents: read
+    services:
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+      timescaledb:
+        image: timescale/timescaledb:latest-pg17
+        ports:
+          - 5432:5432
+        env:
+          POSTGRES_USER: shortener
+          POSTGRES_PASSWORD: shortener
+          POSTGRES_DB: shortener
+        options: >-
+          --health-cmd "pg_isready -U shortener -d shortener"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version: 'stable'
+
+      - name: Install Atlas CLI
+        uses: ariga/setup-atlas@v0
+
+      - name: Enable TimescaleDB extension
+        run: |
+          psql "postgresql://shortener:shortener@localhost:5432/shortener" \
+            -c "CREATE EXTENSION IF NOT EXISTS timescaledb CASCADE;"
+
+      - name: Run database migrations
+        env:
+          DATABASE_URL: postgres://shortener:shortener@localhost:5432/shortener?sslmode=disable
+        run: atlas migrate apply --dir file://migrations --url "$DATABASE_URL"
+
+      - name: Build server
+        run: go build -o bin/server ./cmd/server
+
+      - name: Start server
+        run: |
+          ./bin/server --database-url="postgres://shortener:shortener@localhost:5432/shortener?sslmode=disable" &
+          echo $! > server.pid
+
+      - name: Wait for server
+        run: |
+          for i in {1..30}; do
+            if curl -s http://localhost:8888/health > /dev/null; then
+              echo "Server is ready"
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "Server failed to start"
+          exit 1
+
+      - name: Restore baseline cache
+        id: cache-baseline
+        uses: actions/cache@v4
+        with:
+          path: baseline-perf.json
+          key: perf-baseline-${{ github.base_ref || 'main' }}
+          restore-keys: |
+            perf-baseline-main
+
+      - name: Run performance tests
+        env:
+          BASE_URL: http://localhost:8888
+          PERF_REQUESTS: "1000"
+          PERF_CONCURRENCY: "50"
+          P95_THRESHOLD: "50"
+        run: ./scripts/perf-test.sh
+
+      - name: Compare with baseline
+        id: compare
+        run: ./scripts/perf-compare.sh perf-results.json baseline-perf.json
+        continue-on-error: true
+
+      - name: Update baseline cache (main branch only)
+        if: github.ref == 'refs/heads/main' && success()
+        run: cp perf-results.json baseline-perf.json
+
+      - name: Save baseline cache (main branch only)
+        if: github.ref == 'refs/heads/main' && success()
+        uses: actions/cache/save@v4
+        with:
+          path: baseline-perf.json
+          key: perf-baseline-main-${{ github.sha }}
+
+      - name: Comment PR with results
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const report = fs.readFileSync('perf-report.md', 'utf8');
+
+            // Find existing comment
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number
+            });
+
+            const botComment = comments.find(c =>
+              c.user.type === 'Bot' &&
+              c.body.includes('Performance Comparison Report')
+            );
+
+            if (botComment) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: botComment.id,
+                body: report
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body: report
+              });
+            }
+
+      - name: Fail on regression
+        if: steps.compare.outcome == 'failure'
+        run: |
+          echo "::error::Performance regression detected! Check the PR comment for details."
+          exit 1
+
+      - name: Stop server
+        if: always()
+        run: |
+          [ -f server.pid ] && kill $(cat server.pid) 2>/dev/null || true

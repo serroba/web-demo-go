@@ -102,8 +102,8 @@ All settings can be configured via environment variables or command-line flags:
 |---------------------|------|---------|-------------|
 | `DATABASE_URL` | `--database-url` | - | PostgreSQL connection string (required) |
 | `RATE_LIMIT_STORE` | `--rate-limit-store` | `memory` | Rate limit backend (`memory` or `redis`) |
-| `RATE_LIMIT_GLOBAL_DAY` | `--rate-limit-global-per-day` | `5000` | Max requests per day (global) |
-| `RATE_LIMIT_READ_MINUTE` | `--rate-limit-read-per-minute` | `100` | Max read requests per minute |
+| `RATE_LIMIT_GLOBAL_DAY` | `--rate-limit-global-per-day` | `1000000` | Max requests per day (global) |
+| `RATE_LIMIT_READ_MINUTE` | `--rate-limit-read-per-minute` | `100000` | Max read requests per minute |
 | `RATE_LIMIT_WRITE_MINUTE` | `--rate-limit-write-per-minute` | `10` | Max write requests per minute |
 | `CACHE_SIZE` | `--cache-size` | `1000` | LRU cache size (0 to disable) |
 | `CACHE_TTL` | `--cache-ttl` | `1h` | Redis cache TTL |

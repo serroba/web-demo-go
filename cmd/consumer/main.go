@@ -14,9 +14,12 @@ import (
 
 func main() {
 	opts := &container.Options{
-		RedisAddr:   getEnv("REDIS_ADDR", "localhost:6379"),
-		DatabaseURL: getEnv("DATABASE_URL", ""),
-		LogFormat:   getEnv("LOG_FORMAT", "console"),
+		RedisAddr:        getEnv("REDIS_ADDR", "localhost:6379"),
+		DatabaseURL:      getEnv("DATABASE_URL", ""),
+		LogFormat:        getEnv("LOG_FORMAT", "console"),
+		TopicURLCreated:  getEnv("TOPIC_URL_CREATED", "url.created"),
+		TopicURLAccessed: getEnv("TOPIC_URL_ACCESSED", "url.accessed"),
+		ConsumerGroup:    getEnv("CONSUMER_GROUP", "analytics"),
 	}
 
 	injector := do.New()
