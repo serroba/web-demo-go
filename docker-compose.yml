@@ -27,6 +27,34 @@ services:
       timeout: 3s
       retries: 3
 
+  timescaledb-init:
+    image: timescale/timescaledb:latest-pg17
+    depends_on:
+      timescaledb:
+        condition: service_healthy
+    environment:
+      PGPASSWORD: shortener
+    command: >
+      psql -h timescaledb -U shortener -d shortener
+      -c "CREATE EXTENSION IF NOT EXISTS timescaledb CASCADE;"
+    restart: "no"
+
+  migrate:
+    image: arigaio/atlas:latest
+    depends_on:
+      timescaledb-init:
+        condition: service_completed_successfully
+    volumes:
+      - ./migrations:/migrations
+    command:
+      - migrate
+      - apply
+      - --url
+      - postgres://shortener:shortener@timescaledb:5432/shortener?sslmode=disable
+      - --dir
+      - file://migrations
+    init: true
+
 volumes:
   redis-data:
   timescaledb-data:
