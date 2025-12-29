@@ -215,7 +215,8 @@ jobs:
 
       - name: Start application
         run: |
-          DATABASE_URL="postgres://shortener:shortener@localhost:5432/shortener?sslmode=disable" ./app > app.log 2>&1 &
+          export DATABASE_URL="postgres://shortener:shortener@localhost:5432/shortener?sslmode=disable"
+          ./app > app.log 2>&1 &
           echo $! > app.pid
           sleep 2
           echo "=== App startup log ==="
