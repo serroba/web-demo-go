@@ -16,6 +16,7 @@ import (
 	"github.com/serroba/web-demo-go/internal/middleware"
 	"github.com/serroba/web-demo-go/internal/ratelimit"
 	"github.com/stretchr/testify/assert"
+	"go.uber.org/zap"
 )
 
 const (
@@ -46,19 +47,24 @@ type mockHumaContext struct {
 	remoteAddr string
 	written    []byte
 	statusCode int
+	method     string
+	operation  *huma.Operation
 }
 
 func newMockHumaContext() *mockHumaContext {
 	return &mockHumaContext{
 		headers: make(map[string]string),
+		method:  "GET",
 	}
 }
 
-func (m *mockHumaContext) Operation() *huma.Operation            { return nil }
+func (m *mockHumaContext) Operation() *huma.Operation {
+	return m.operation
+}
 func (m *mockHumaContext) Context() context.Context              { return context.Background() }
 func (m *mockHumaContext) TLS() *tls.ConnectionState             { return nil }
 func (m *mockHumaContext) Version() huma.ProtoVersion            { return huma.ProtoVersion{} }
-func (m *mockHumaContext) Method() string                        { return "GET" }
+func (m *mockHumaContext) Method() string                        { return m.method }
 func (m *mockHumaContext) Host() string                          { return m.host }
 func (m *mockHumaContext) RemoteAddr() string                    { return m.remoteAddr }
 func (m *mockHumaContext) URL() url.URL                          { return url.URL{} }
@@ -319,6 +325,7 @@ func (m *mockScopeResolver) Resolve(_ huma.Context) []ratelimit.Scope {
 	return m.scopes
 }
 
+//nolint:maintidx // Test function with comprehensive coverage across many scenarios
 func TestPolicyRateLimiter(t *testing.T) {
 	t.Run("allows request when under limit", func(t *testing.T) {
 		api := newTestAPI()
@@ -328,8 +335,9 @@ func TestPolicyRateLimiter(t *testing.T) {
 			Build()
 		limiter := ratelimit.NewPolicyLimiter(store, policy)
 		resolver := &mockScopeResolver{scopes: []ratelimit.Scope{ratelimit.ScopeGlobal}}
+		logger := zap.NewNop()
 
-		mw := middleware.PolicyRateLimiter(api, limiter, resolver)
+		mw := middleware.PolicyRateLimiter(api, limiter, resolver, logger)
 
 		ctx := newMockHumaContext()
 		ctx.host = testHostAddr
@@ -352,8 +360,9 @@ func TestPolicyRateLimiter(t *testing.T) {
 			Build()
 		limiter := ratelimit.NewPolicyLimiter(store, policy)
 		resolver := &mockScopeResolver{scopes: []ratelimit.Scope{ratelimit.ScopeGlobal}}
+		logger := zap.NewNop()
 
-		mw := middleware.PolicyRateLimiter(api, limiter, resolver)
+		mw := middleware.PolicyRateLimiter(api, limiter, resolver, logger)
 
 		ctx := newMockHumaContext()
 		ctx.host = testHostAddr
@@ -386,8 +395,9 @@ func TestPolicyRateLimiter(t *testing.T) {
 			Build()
 		limiter := ratelimit.NewPolicyLimiter(store, policy)
 		resolver := &mockScopeResolver{scopes: []ratelimit.Scope{ratelimit.ScopeWrite}}
+		logger := zap.NewNop()
 
-		mw := middleware.PolicyRateLimiter(api, limiter, resolver)
+		mw := middleware.PolicyRateLimiter(api, limiter, resolver, logger)
 
 		ctx := newMockHumaContext()
 		ctx.host = testHostAddr
@@ -413,12 +423,13 @@ func TestPolicyRateLimiter(t *testing.T) {
 			AddLimit(ratelimit.ScopeWrite, 2, time.Minute).
 			Build()
 		limiter := ratelimit.NewPolicyLimiter(store, policy)
+		logger := zap.NewNop()
 
 		readResolver := &mockScopeResolver{scopes: []ratelimit.Scope{ratelimit.ScopeRead}}
 		writeResolver := &mockScopeResolver{scopes: []ratelimit.Scope{ratelimit.ScopeWrite}}
 
-		readMW := middleware.PolicyRateLimiter(api, limiter, readResolver)
-		writeMW := middleware.PolicyRateLimiter(api, limiter, writeResolver)
+		readMW := middleware.PolicyRateLimiter(api, limiter, readResolver, logger)
+		writeMW := middleware.PolicyRateLimiter(api, limiter, writeResolver, logger)
 
 		// Read requests - should allow 5
 		for i := range 5 {
@@ -474,12 +485,180 @@ func TestPolicyRateLimiter(t *testing.T) {
 			Build()
 		limiter := ratelimit.NewPolicyLimiter(store, policy)
 		resolver := &mockScopeResolver{scopes: []ratelimit.Scope{ratelimit.ScopeGlobal}}
+		logger := zap.NewNop()
 
-		mw := middleware.PolicyRateLimiter(api, limiter, resolver)
+		mw := middleware.PolicyRateLimiter(api, limiter, resolver, logger)
 
 		ctx := newMockHumaContext()
 		ctx.host = testHostAddr
 		ctx.headers["User-Agent"] = testUserAgent
+
+		nextCalled := false
+
+		mw(ctx, func(_ huma.Context) {
+			nextCalled = true
+		})
+
+		assert.False(t, nextCalled)
+		assert.Equal(t, 500, ctx.statusCode)
+	})
+
+	t.Run("skips rate limiting when disabled via metadata", func(t *testing.T) {
+		api := newTestAPI()
+		store := newMockPolicyStore()
+		policy := ratelimit.NewPolicyBuilder().
+			AddLimit(ratelimit.ScopeGlobal, 1, time.Minute).
+			Build()
+		limiter := ratelimit.NewPolicyLimiter(store, policy)
+		resolver := &mockScopeResolver{scopes: []ratelimit.Scope{ratelimit.ScopeGlobal}}
+		logger := zap.NewNop()
+
+		mw := middleware.PolicyRateLimiter(api, limiter, resolver, logger)
+
+		// First request with disabled rate limiting
+		ctx := newMockHumaContext()
+		ctx.host = testHostAddr
+		ctx.headers["User-Agent"] = testUserAgent
+		ctx.operation = &huma.Operation{
+			Path: "/test",
+			Metadata: map[string]any{
+				ratelimit.MetadataKey: ratelimit.EndpointConfig{
+					Disabled: true,
+				},
+			},
+		}
+
+		nextCalled := false
+
+		mw(ctx, func(_ huma.Context) {
+			nextCalled = true
+		})
+
+		assert.True(t, nextCalled, "next should be called when rate limiting is disabled")
+
+		// Second request should also be allowed (disabled means no limit)
+		ctx2 := newMockHumaContext()
+		ctx2.host = testHostAddr
+		ctx2.headers["User-Agent"] = testUserAgent
+		ctx2.operation = ctx.operation
+
+		nextCalled = false
+
+		mw(ctx2, func(_ huma.Context) {
+			nextCalled = true
+		})
+
+		assert.True(t, nextCalled, "second request should also be allowed when disabled")
+	})
+
+	t.Run("applies custom limits from metadata", func(t *testing.T) {
+		api := newTestAPI()
+		store := newMockPolicyStore()
+		policy := ratelimit.NewPolicyBuilder().
+			AddLimit(ratelimit.ScopeGlobal, 100, time.Minute). // Policy allows 100
+			Build()
+		limiter := ratelimit.NewPolicyLimiter(store, policy)
+		resolver := &mockScopeResolver{scopes: []ratelimit.Scope{ratelimit.ScopeGlobal}}
+		logger := zap.NewNop()
+
+		mw := middleware.PolicyRateLimiter(api, limiter, resolver, logger)
+
+		// Custom limit of 2 per minute
+		operation := &huma.Operation{
+			Path: "/custom",
+			Metadata: map[string]any{
+				ratelimit.MetadataKey: ratelimit.EndpointConfig{
+					Limits: []ratelimit.LimitConfig{
+						{Window: time.Minute, Max: 2},
+					},
+				},
+			},
+		}
+
+		// First two requests should succeed
+		for i := range 2 {
+			ctx := newMockHumaContext()
+			ctx.host = testHostAddr
+			ctx.headers["User-Agent"] = testUserAgent
+			ctx.operation = operation
+
+			nextCalled := false
+
+			mw(ctx, func(_ huma.Context) {
+				nextCalled = true
+			})
+
+			assert.True(t, nextCalled, "request %d should be allowed", i+1)
+		}
+
+		// Third request should be rate limited
+		ctx := newMockHumaContext()
+		ctx.host = testHostAddr
+		ctx.headers["User-Agent"] = testUserAgent
+		ctx.operation = operation
+
+		nextCalled := false
+
+		mw(ctx, func(_ huma.Context) {
+			nextCalled = true
+		})
+
+		assert.False(t, nextCalled, "third request should be denied by custom limit")
+		assert.Equal(t, 429, ctx.statusCode)
+	})
+
+	t.Run("extracts path from operation", func(t *testing.T) {
+		api := newTestAPI()
+		store := newMockPolicyStore()
+		policy := ratelimit.NewPolicyBuilder().
+			AddLimit(ratelimit.ScopeGlobal, 10, time.Minute).
+			Build()
+		limiter := ratelimit.NewPolicyLimiter(store, policy)
+		resolver := &mockScopeResolver{scopes: []ratelimit.Scope{ratelimit.ScopeGlobal}}
+		logger := zap.NewNop()
+
+		mw := middleware.PolicyRateLimiter(api, limiter, resolver, logger)
+
+		ctx := newMockHumaContext()
+		ctx.host = testHostAddr
+		ctx.headers["User-Agent"] = testUserAgent
+		ctx.operation = &huma.Operation{
+			Path: "/api/v1/test",
+		}
+
+		nextCalled := false
+
+		mw(ctx, func(_ huma.Context) {
+			nextCalled = true
+		})
+
+		assert.True(t, nextCalled, "request should be allowed")
+	})
+
+	t.Run("custom limits store error returns 500", func(t *testing.T) {
+		api := newTestAPI()
+		store := newMockPolicyStore()
+		store.err = errors.New("store error")
+		policy := ratelimit.NewPolicyBuilder().Build()
+		limiter := ratelimit.NewPolicyLimiter(store, policy)
+		resolver := &mockScopeResolver{scopes: []ratelimit.Scope{}}
+		logger := zap.NewNop()
+
+		mw := middleware.PolicyRateLimiter(api, limiter, resolver, logger)
+
+		ctx := newMockHumaContext()
+		ctx.host = testHostAddr
+		ctx.headers["User-Agent"] = testUserAgent
+		ctx.operation = &huma.Operation{
+			Path: "/custom-error",
+			Metadata: map[string]any{
+				ratelimit.MetadataKey: ratelimit.EndpointConfig{
+					Limits: []ratelimit.LimitConfig{
+						{Window: time.Minute, Max: 10},
+					},
+				},
+			},
+		}
 
 		nextCalled := false
 

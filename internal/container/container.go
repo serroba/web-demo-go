@@ -263,8 +263,8 @@ func HTTPPackage(i *do.Injector) {
 			Build()
 
 		limiter := ratelimit.NewPolicyLimiter(rateLimitStore, policy)
-		resolver := ratelimit.NewMethodScopeResolver()
-		api.UseMiddleware(middleware.PolicyRateLimiter(api, limiter, resolver))
+		resolver := ratelimit.NewOperationScopeResolver()
+		api.UseMiddleware(middleware.PolicyRateLimiter(api, limiter, resolver, logger))
 
 		// Set up handlers
 		baseURL := fmt.Sprintf("http://localhost:%d", opts.Port)

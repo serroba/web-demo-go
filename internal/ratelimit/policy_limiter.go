@@ -62,3 +62,8 @@ func (l *PolicyLimiter) Allow(ctx context.Context, clientKey string, scopes []Sc
 func (l *PolicyLimiter) buildKey(clientKey string, scope Scope, limit LimitConfig) string {
 	return fmt.Sprintf("%s:%s:%d", clientKey, scope, limit.Window.Milliseconds())
 }
+
+// Store returns the underlying rate limit store.
+func (l *PolicyLimiter) Store() Store {
+	return l.store
+}
