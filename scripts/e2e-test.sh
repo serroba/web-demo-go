@@ -20,7 +20,8 @@ error() { echo -e "${RED}[E2E ERROR]${NC} $1" >&2; }
 test_url_creation_flow() {
     log "Testing URL creation flow..."
 
-    local test_url="https://example.com/e2e-test-$(date +%s)"
+    local test_url
+    test_url="https://example.com/e2e-test-$(date +%s)"
 
     # Create short URL via API
     local response
@@ -41,7 +42,7 @@ test_url_creation_flow() {
 
     # Wait for event to appear in TimescaleDB
     log "Waiting for url_created_events (timeout: ${E2E_TIMEOUT}s)..."
-    for i in $(seq 1 "$E2E_TIMEOUT"); do
+    for _ in $(seq 1 "$E2E_TIMEOUT"); do
         local count
         count=$(psql "$DATABASE_URL" -t -c \
             "SELECT COUNT(*) FROM url_created_events WHERE code = '$code'" 2>/dev/null || echo "0")
@@ -63,7 +64,8 @@ test_url_access_flow() {
     log "Testing URL access flow..."
 
     # First create a URL
-    local test_url="https://example.com/e2e-access-$(date +%s)"
+    local test_url
+    test_url="https://example.com/e2e-access-$(date +%s)"
     local response
     response=$(curl -s -X POST "$BASE_URL/shorten" \
         -H "Content-Type: application/json" \
@@ -91,7 +93,7 @@ test_url_access_flow() {
 
     # Wait for access event in TimescaleDB
     log "Waiting for url_accessed_events (timeout: ${E2E_TIMEOUT}s)..."
-    for i in $(seq 1 "$E2E_TIMEOUT"); do
+    for _ in $(seq 1 "$E2E_TIMEOUT"); do
         local count
         count=$(psql "$DATABASE_URL" -t -c \
             "SELECT COUNT(*) FROM url_accessed_events WHERE code = '$code'" 2>/dev/null || echo "0")

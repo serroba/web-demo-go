@@ -12,6 +12,17 @@ on:
   workflow_dispatch:
 
 jobs:
+  shell-lint:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Run ShellCheck
+        uses: azohra/shell-linter@latest
+        with:
+          path: "scripts"
+
   migrations:
     runs-on: ubuntu-latest
     services:

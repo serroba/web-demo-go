@@ -61,7 +61,7 @@ wait_for_service() {
     local max_attempts=${3:-30}
 
     log "Waiting for $name to be ready..."
-    for i in $(seq 1 $max_attempts); do
+    for i in $(seq 1 "$max_attempts"); do
         if curl -s "$url" > /dev/null 2>&1; then
             success "$name is ready"
             return 0
