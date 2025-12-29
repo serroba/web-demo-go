@@ -447,7 +447,7 @@ jobs:
 
       - name: Restore baseline cache
         id: cache-baseline
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: baseline-perf.json
           key: perf-baseline-${{ github.base_ref || 'main' }}
@@ -473,7 +473,7 @@ jobs:
 
       - name: Save baseline cache (main branch only)
         if: github.ref == 'refs/heads/main' && success()
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@v5
         with:
           path: baseline-perf.json
           key: perf-baseline-main-${{ github.sha }}
